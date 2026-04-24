@@ -66,8 +66,93 @@ function GlobalStyles() {
         to   { opacity: 1; transform: scale(1) translateY(0); }
       }
       .modal-box { animation: popIn .22s cubic-bezier(.34,1.4,.64,1) forwards; }
+
+      /* ── Responsividade ── */
+      html { font-size: 16px; }
+      @media (max-width: 1200px) {
+        html { font-size: 15px; }
+      }
+      @media (max-width: 900px) {
+        html { font-size: 14px; }
+        .page { padding: 16px 14px 48px !important; }
+        .sidebar-label { display: none !important; }
+      }
+      @media (max-width: 640px) {
+        html { font-size: 13px; }
+        .page { padding: 12px 10px 48px !important; }
+      }
+
+      /* Grid responsivo para cards */
+      .grid-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 14px;
+      }
+      @media (max-width: 640px) {
+        .grid-cards { grid-template-columns: 1fr !important; }
+      }
+
+      /* Tabelas responsivas */
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+      /* Topbar responsiva */
+      .topbar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      /* Touch targets */
+      @media (hover: none) {
+        button, a { min-height: 42px; }
+      }
     `}</style>
   );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   useCloudState — localStorage + Firebase Firestore sincronizado
+   Sincroniza dados em tempo real entre PC, celular e tablet
+   Estrutura Firestore: clinica/{docId} → { data: [...] }
+════════════════════════════════════════════════════════════════ */
+function useCloudState(docName, localKey, defaultVal = []) {
+  const [value, setValue] = useState(() => {
+    try { const s = localStorage.getItem(localKey); return s ? JSON.parse(s) : defaultVal; }
+    catch(e) { return defaultVal; }
+  });
+  const [loading, setLoading] = useState(FB_CONFIGURED);
+
+  useEffect(() => {
+    // Sempre persiste localmente (fallback e cache offline)
+    try { localStorage.setItem(localKey, JSON.stringify(value)); } catch(e) {}
+  }, [value, localKey]);
+
+  useEffect(() => {
+    if (!FB_CONFIGURED || !db) { setLoading(false); return; }
+    // Escuta em tempo real — atualiza em todos os dispositivos
+    const ref = doc(db, "crm_clinica", docName);
+    const unsub = onSnapshot(ref, snap => {
+      if (snap.exists()) {
+        const data = snap.data().data;
+        if (Array.isArray(data)) {
+          setValue(data);
+          try { localStorage.setItem(localKey, JSON.stringify(data)); } catch(e) {}
+        }
+      }
+      setLoading(false);
+    }, () => setLoading(false));
+    return () => unsub();
+  }, [docName, localKey]);
+
+  // Setter que salva localmente E no Firebase
+  const setCloud = useCallback((updater) => {
+    setValue(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (FB_CONFIGURED && db) {
+        setDoc(doc(db, "crm_clinica", docName), { data: next, ts: Date.now() })
+          .catch(e => console.warn("[Cloud]", e));
+      }
+      return next;
+    });
+  }, [docName]);
+
+  return [value, setCloud, loading];
 }
 
 // ─── Icones SVG v26 ────────────────────────────────────────────────────────────
@@ -3920,8 +4005,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
 function PageConsultas() {
-  const [consultas, setConsultas] = useState(()=>{try{const s=localStorage.getItem("crm_consultas_v26");return s?JSON.parse(s):[];}catch(e){return [];}});
-  useEffect(()=>{localStorage.setItem("crm_consultas_v26",JSON.stringify(consultas));},[consultas]);
+  const [consultas, setConsultas] = useCloudState("consultas", "crm_consultas_v26", []);
   const [showNew, setShowNew] = useState(false);
   const [filtro, setFiltro] = useState("Todos");
   const [q, setQ] = useState("");
@@ -4441,15 +4525,7 @@ function stBadge(st) {
 ════════════════════════════════════════════════════════════════ */
 
 function PageFinancas() {
-  const [lancamentos, setLancamentos] = useState(() => {
-    try {
-      const s = localStorage.getItem("crm_lancamentos_v26");
-      return s ? JSON.parse(s) : mockLancamentos_data;
-    } catch(e) { return mockLancamentos_data; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("crm_lancamentos_v26", JSON.stringify(lancamentos)); } catch(e) {}
-  }, [lancamentos]);
+  const [lancamentos, setLancamentos] = useCloudState("lancamentos", "crm_lancamentos_v26", []);
   const [filtro, setFiltro] = useState("Todos");
   const total = lancamentos.reduce((s,l)=>s+l.val,0);
   const pago  = lancamentos.filter(l=>l.st==="Pago").reduce((s,l)=>s+l.val,0);
@@ -4552,8 +4628,7 @@ function PageFinancas() {
 
 
 function PageMarketing({usuario}){
-  const [tarefas,setTarefas]=useState(()=>JSON.parse(localStorage.getItem("crm_marketing_v26")||"[]"));
-  useEffect(()=>{localStorage.setItem("crm_marketing_v26",JSON.stringify(tarefas));},[tarefas]);
+  const [tarefas,setTarefas]=useCloudState("marketing","crm_marketing_v26",[]);
   const [showNew,setShowNew]=useState(false);
   const [form,setForm]=useState({titulo:"",cat:"Instagram",prazo:"",st:"pendente",prior:"media"});
   const priCor={alta:C.red,media:C.amber,baixa:C.green};
@@ -6705,10 +6780,10 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
   const NavItem = ({ item }) => {
     const active = page === item.key;
     return (
-      <button onClick={()=>setPage(item.key)} title={collapsed?item.label:undefined}
+      <button onClick={()=>setPage(item.key)} title={effectiveCollapsed?item.label:undefined}
         style={{ width:"100%", display:"flex", alignItems:"center", gap:10,
-          padding:collapsed?"9px 0":"9px 11px", borderRadius:9, border:"none",
-          cursor:"pointer", justifyContent:collapsed?"center":"flex-start",
+          padding:effectiveCollapsed?"9px 0":"9px 11px", borderRadius:9, border:"none",
+          cursor:"pointer", justifyContent:effectiveCollapsed?"center":"flex-start",
           background:active?T.sideAct:"transparent",
           borderLeft:active?`2.5px solid ${T.sideActBrd}`:"2.5px solid transparent",
           marginBottom:1, transition:"all .14s" }}
@@ -6719,22 +6794,35 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
           <span style={{ fontSize:13, fontWeight:active?600:400,
             color:active?"#fff":T.sideTx, whiteSpace:"nowrap" }}>{item.label}</span>
         )}
-        {active && !collapsed && (
+        {active && !effectiveCollapsed && (
           <span style={{ marginLeft:"auto", width:6, height:6, borderRadius:"50%",
             background:T.sideActBrd, flexShrink:0 }} />
         )}
       </button>
     );
   };
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const fn = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  const effectiveCollapsed = collapsed || isMobile;
+
   return (
-    <div style={{ width:collapsed?62:230, background:T.side, display:"flex",
+    <div style={{ width: isMobile ? (collapsed ? 0 : "100vw") : (collapsed ? 62 : 230),
+      background:T.side, display:"flex",
       flexDirection:"column", transition:"width .22s cubic-bezier(.4,0,.2,1)",
-      overflow:"hidden", flexShrink:0, userSelect:"none" }}>
+      overflow:"hidden", flexShrink:0, userSelect:"none",
+      position: isMobile ? "fixed" : "relative",
+      zIndex: isMobile ? 9000 : "auto",
+      height: isMobile ? "100vh" : "auto",
+      top:0, left:0 }}>
       {/* Logo */}
       <div style={{ height:62, display:"flex", alignItems:"center",
         padding:collapsed?"0 15px":"0 14px", gap:10,
         borderBottom:"1px solid rgba(255,255,255,.06)", flexShrink:0 }}>
-        {!collapsed && (<>
+        {!effectiveCollapsed && (<>
           <div style={{ width:32, height:32, borderRadius:9, overflow:"hidden",
             background:"rgba(255,255,255,.08)", display:"flex", alignItems:"center",
             justifyContent:"center", flexShrink:0 }}>
@@ -6746,7 +6834,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
             <div style={{ fontSize:10, color:T.sideLabel, lineHeight:1.3 }}>Dra. Ilza · v31</div>
           </div>
         </>)}
-        {collapsed && (
+        {effectiveCollapsed && (
           <div style={{ width:32, height:32, borderRadius:9, background:"rgba(255,255,255,.08)",
             display:"flex", alignItems:"center", justifyContent:"center" }}>
             <Ic n="spark" sz={14} c="#fff" />
@@ -6757,13 +6845,13 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
             padding:4, borderRadius:6, display:"flex", flexShrink:0, opacity:.3 }}
           onMouseEnter={e=>e.currentTarget.style.opacity="1"}
           onMouseLeave={e=>e.currentTarget.style.opacity=".3"}>
-          <Ic n={collapsed?"chevR":"chevL"} sz={14} c="#fff" />
+          <Ic n={effectiveCollapsed?"chevR":"chevL"} sz={14} c="#fff" />
         </button>
       </div>
       <nav style={{ flex:1, overflowY:"auto", padding:"10px 8px" }}>
         {sections.map((sec,si) => (
           <div key={si} style={{ marginBottom:6 }}>
-            {!collapsed
+            {!effectiveCollapsed
               ? <div style={{ fontSize:9.5, fontWeight:700, color:T.sideLabel,
                   letterSpacing:".12em", textTransform:"uppercase", padding:"10px 12px 5px" }}>{sec.label}</div>
               : si>0 ? <div style={{ height:1, background:"rgba(255,255,255,.05)", margin:"8px 6px" }}/> : null}
@@ -6803,7 +6891,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
 }
 
 
-function Topbar({ page, usuario }) {
+function Topbar({ page, usuario, onMenuToggle }) {
   const labels = {
     home:"Dashboard", pacientes:"Pacientes", exames:"Exames", consultas:"Consultas",
     telemedicina:"Telemedicina", financas:"Financeiro", estoque:"Estoque",
@@ -6814,10 +6902,24 @@ function Topbar({ page, usuario }) {
   return (
     <div style={{ height:62, background:T.sur, borderBottom:`1px solid ${T.br}`,
       display:"flex", alignItems:"center", justifyContent:"space-between",
-      padding:"0 28px", flexShrink:0 }}>
-      <div>
-        <div style={{ fontSize:17, fontWeight:700, color:T.tx, letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
-        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia · IMES Santos</div>
+      padding:"0 16px", flexShrink:0 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        {/* Botão hamburger — aparece no mobile */}
+        <button onClick={onMenuToggle}
+          style={{ background:T.sur2, border:`1.5px solid ${T.br}`, borderRadius:10,
+            width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center",
+            cursor:"pointer", flexShrink:0 }}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none"
+            stroke={T.txM} strokeWidth={2} strokeLinecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <div>
+          <div className="topbar-title" style={{ fontSize:17, fontWeight:700, color:T.tx, letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
+          <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia · IMES Santos</div>
+        </div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button style={{ position:"relative", background:T.sur2, border:`1.5px solid ${T.br}`,
@@ -6850,15 +6952,16 @@ function Topbar({ page, usuario }) {
 
 function CRM({usuario,onLogout,users,setUsers}){
   const [page,setPage]=useState("home");
-  const [pats,setPats]=useState(()=>JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"));
-  // Persiste pacientes no localStorage a cada alteracao
-  useEffect(()=>{ localStorage.setItem("crm_pats_v26", JSON.stringify(pats)); },[pats]);
+
+  // ── Estado sincronizado na nuvem (Firebase Firestore) ──
+  // Funciona em PC, celular e tablet — mesmo dado, tempo real
+  const [pats, setPats, patsLoading]         = useCloudState("pacientes",  "crm_pats_v26",     []);
+  const [estoqueItens, setEstoqueItens]       = useCloudState("estoque",    "crm_estoque_v26",  []);
+  const [allExames, setAllExames]             = useCloudState("exames",     "crm_exames_v26",   []);
+
   const patsState=[pats,setPats];
-  // Fila prioridade
-  const [filaPrioridadeVis,setFilaPrioridadeVis]=useState(false);
+  // Fila prioridade / sidebar collapse
   const [col,setCol]=useState(false);
-  const [estoqueItens,setEstoqueItens]=useState(()=>JSON.parse(localStorage.getItem("crm_estoque_v26")||"[]"));
-  useEffect(()=>{localStorage.setItem("crm_estoque_v26",JSON.stringify(estoqueItens));},[estoqueItens]);
   const [alertasDismissed,setAlertasDismissed]=useState([]);
   const [showSair,setShowSair]=useState(false);   // ← popup confirmação sair
 
@@ -6879,9 +6982,7 @@ function CRM({usuario,onLogout,users,setUsers}){
   const estoqueState=[estoqueItens,setEstoqueItens];
 
   // useMemo evita recriar os componentes de pagina a cada render
-  const [allExames, setAllExames] = useState(()=>JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"));
   const [pacFiltro, setPacFiltro] = useState(null);
-  useEffect(()=>{ localStorage.setItem("crm_exames_v26",JSON.stringify(allExames)); },[allExames]);
 
   const pages = useMemo(() => ({
     home:        <PageHome setPage={setPage} usuario={usuario}/>,
@@ -6941,7 +7042,7 @@ function CRM({usuario,onLogout,users,setUsers}){
 
         {/* Main area */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-          <Topbar page={page} usuario={usuario} />
+          <Topbar page={page} usuario={usuario} onMenuToggle={()=>setCol(c=>!c)} />
           <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg}}>
             {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
           </div>
