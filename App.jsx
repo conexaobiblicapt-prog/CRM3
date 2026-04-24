@@ -4354,6 +4354,28 @@ function Badge({ label, color, bg, brd }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
+   stBadge — badge de status global (pacientes, exames, consultas)
+════════════════════════════════════════════════════════════════ */
+function stBadge(st) {
+  const m = {
+    "Ativo":      [T.gr,  T.grB,  T.grBr],
+    "Inativo":    [T.re,  T.reB,  T.reBr],
+    "Pendente":   [T.am,  T.amB,  T.amBr],
+    "Pago":       [T.gr,  T.grB,  T.grBr],
+    "Atrasado":   [T.re,  T.reB,  T.reBr],
+    "Cancelado":  [T.re,  T.reB,  T.reBr],
+    "Confirmado": [T.gr,  T.grB,  T.grBr],
+    "Aguardando": [T.am,  T.amB,  T.amBr],
+    "Realizado":  [T.pu,  T.puB,  T.puBr],
+    "Solicitado": [T.am,  T.amB,  T.amBr],
+    "Concluído":  [T.pu,  T.puB,  T.puBr],
+    "Novo":       [T.b,   T.bL,   T.b+"44"],
+  };
+  const [c, b, br] = m[st] || [T.txM, T.sur2, T.br];
+  return <Badge label={st || "—"} color={c} bg={b} brd={br} />;
+}
+
+/* ════════════════════════════════════════════════════════════════
    FINANCEIRO
 ════════════════════════════════════════════════════════════════ */
 
@@ -6247,58 +6269,156 @@ const NAV=[
 
 
 // ─── PAGE: SALA VIRTUAL ───────────────────────────────────────────────────────
-const SALA_MSGS_INIT = {};
+// Sincroniza em tempo real via Firebase RTDB (cross-origin com o Portal)
+// Fallback: localStorage quando Firebase não está configurado
 
 function PageSalaVirtual({ pats }) {
-  const [allMsgs, setAllMsgs] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem("crm_sala_msgs")||"{}"); } catch { return {}; }
-  });
-  const [selPac, setSelPac] = useState(null);
-  const [texto, setTexto] = useState("");
-  const [busca, setBusca] = useState("");
+  const [allMsgs, setAllMsgs] = useState({});
+  const [selPac, setSelPac]   = useState(null);
+  const [texto, setTexto]     = useState("");
+  const [busca, setBusca]     = useState("");
+  const [online, setOnline]   = useState({});
   const bottomRef = useRef();
-  const inputRef = useRef();
+  const inputRef  = useRef();
+  const unsubs    = useRef({});
 
-  useEffect(()=>{
-    localStorage.setItem("crm_sala_msgs", JSON.stringify(allMsgs));
-  }, [allMsgs]);
+  // ── Carrega mensagens: Firebase RTDB se disponível, senão localStorage ──
+  useEffect(() => {
+    if (!FB_CONFIGURED || !rtdb) {
+      try {
+        const saved = JSON.parse(localStorage.getItem("crm_sala_msgs") || "{}");
+        setAllMsgs(saved);
+      } catch {}
+      return;
+    }
 
-  useEffect(()=>{
-    if(bottomRef.current) bottomRef.current.scrollIntoView({ behavior:"smooth" });
+    // Escuta todas as conversas em tempo real (apenas as do paciente selecionado)
+    // A leitura global de índice vem de /salas_index para listar pacientes com msgs
+    const idxRef = ref(rtdb, "salas_index");
+    const unsub = onValue(idxRef, snap => {
+      const val = snap.val() || {};
+      // Mantém o estado de online/última mensagem por paciente
+      setOnline(val);
+    });
+    return () => off(idxRef);
+  }, []);
+
+  // ── Escuta mensagens do paciente selecionado em tempo real ──
+  useEffect(() => {
+    if (!selPac) return;
+
+    if (!FB_CONFIGURED || !rtdb) {
+      // fallback localStorage
+      const saved = JSON.parse(localStorage.getItem("crm_sala_msgs") || "{}");
+      setAllMsgs(saved);
+      return;
+    }
+
+    const salaRef = ref(rtdb, `salas/${selPac.id}/msgs`);
+    const unsub = onValue(salaRef, snap => {
+      const val = snap.val();
+      const lista = val ? Object.entries(val)
+        .map(([k,v]) => ({ id: k, ...v }))
+        .sort((a,b) => (a.tsNum||0) - (b.tsNum||0))
+        : [];
+      setAllMsgs(prev => ({ ...prev, [selPac.id]: lista }));
+
+      // Marca mensagens do paciente como lidas
+      const updates = {};
+      lista.forEach(m => {
+        if (m.de === "pac" && !m.lida) updates[`salas/${selPac.id}/msgs/${m.id}/lida`] = true;
+      });
+      if (Object.keys(updates).length > 0) update(ref(rtdb), updates);
+    });
+    return () => off(salaRef);
+  }, [selPac]);
+
+  // ── Scroll para baixo ao mudar mensagens ──
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [allMsgs, selPac]);
 
-  const msgs = selPac ? (allMsgs[selPac.id]||[]) : [];
+  const msgs = selPac ? (allMsgs[selPac.id] || []) : [];
 
   function enviar() {
     const txt = texto.trim();
-    if(!txt || !selPac) return;
-    const nova = { id:"m"+Date.now(), de:"dra", txt, ts: new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) };
-    setAllMsgs(prev => ({ ...prev, [selPac.id]: [...(prev[selPac.id]||[]), nova] }));
+    if (!txt || !selPac) return;
+    const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const nova = { de: "dra", txt, ts, tsNum: Date.now(), lida: true };
+
+    if (FB_CONFIGURED && rtdb) {
+      const salaRef = ref(rtdb, `salas/${selPac.id}/msgs`);
+      push(salaRef, nova);
+      // Atualiza índice com última mensagem
+      set(ref(rtdb, `salas_index/${selPac.id}`), {
+        nm: selPac.nm,
+        ultimaTxt: "Dra: " + txt,
+        ultimaTs: ts,
+        tsNum: Date.now(),
+      });
+    } else {
+      // fallback localStorage
+      const nova2 = { ...nova, id: "m" + Date.now() };
+      setAllMsgs(prev => {
+        const updated = { ...prev, [selPac.id]: [...(prev[selPac.id] || []), nova2] };
+        localStorage.setItem("crm_sala_msgs", JSON.stringify(updated));
+        return updated;
+      });
+    }
     setTexto("");
-    setTimeout(()=>inputRef.current?.focus(), 50);
+    setTimeout(() => inputRef.current?.focus(), 50);
   }
 
-  function onKey(e) { if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }
+  function onKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+  }
 
   const ultimaMsg = pac => {
-    const ms = allMsgs[pac.id]||[];
-    if(!ms.length) return { txt:"Nenhuma mensagem ainda", ts:"" };
-    const m = ms[ms.length-1];
-    return { txt:(m.de==="dra"?"Você: ":"")+m.txt, ts:m.ts };
+    const ms = allMsgs[pac.id] || [];
+    if (!ms.length) {
+      // Tenta pegar do índice Firebase
+      const idx = online[pac.id];
+      if (idx) return { txt: idx.ultimaTxt || "Sem mensagens", ts: idx.ultimaTs || "" };
+      return { txt: "Nenhuma mensagem ainda", ts: "" };
+    }
+    const m = ms[ms.length - 1];
+    return { txt: (m.de === "dra" ? "Você: " : "") + m.txt, ts: m.ts };
   };
 
-  const naoLidas = pac => (allMsgs[pac.id]||[]).filter(m=>m.de==="pac").length;
+  const naoLidas = pac => {
+    const ms = allMsgs[pac.id] || [];
+    return ms.filter(m => m.de === "pac" && !m.lida).length;
+  };
 
-  const filtrados = pats.filter(p=>p.nm.toLowerCase().includes(busca.toLowerCase()));
+  const totalNaoLidas = pats.reduce((s, p) => s + naoLidas(p), 0);
+
+  const filtrados = pats.filter(p => p.nm.toLowerCase().includes(busca.toLowerCase()));
+
+  // Ordena: pacientes com mensagens não lidas primeiro
+  const ordenados = [...filtrados].sort((a, b) => {
+    const na = naoLidas(a), nb = naoLidas(b);
+    if (na !== nb) return nb - na;
+    const ta = (online[a.id]?.tsNum || 0);
+    const tb = (online[b.id]?.tsNum || 0);
+    return tb - ta;
+  });
 
   return (
     <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
 
-      {/* Lista de pacientes */}
+      {/* ── Lista de pacientes ── */}
       <div style={{ width:300, flexShrink:0, borderRight:`1px solid ${T.br}`,
         display:"flex", flexDirection:"column", background:T.sur }}>
         <div style={{ padding:"20px 20px 14px", borderBottom:`1px solid ${T.br}` }}>
-          <div style={{ fontSize:16, fontWeight:800, color:T.tx, marginBottom:12 }}>Sala Virtual</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+            <div style={{ fontSize:16, fontWeight:800, color:T.tx }}>Sala Virtual</div>
+            {totalNaoLidas > 0 && (
+              <span style={{ background:T.b, color:"#fff", borderRadius:99,
+                padding:"2px 8px", fontSize:10, fontWeight:800 }}>
+                {totalNaoLidas} nova{totalNaoLidas > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
           <div style={{ position:"relative" }}>
             <div style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)" }}>
               <Ic n="search" sz={14} c={T.txS}/>
@@ -6309,20 +6429,20 @@ function PageSalaVirtual({ pats }) {
           </div>
         </div>
         <div style={{ flex:1, overflowY:"auto" }}>
-          {filtrados.length===0 && (
+          {ordenados.length === 0 && (
             <div style={{ padding:"40px 20px", textAlign:"center", color:T.txS, fontSize:13 }}>
               Nenhum paciente encontrado
             </div>
           )}
-          {filtrados.map(p => {
+          {ordenados.map(p => {
             const { txt, ts } = ultimaMsg(p);
             const nl = naoLidas(p);
             const isActive = selPac?.id === p.id;
             return (
               <div key={p.id} onClick={()=>setSelPac(p)}
                 style={{ padding:"14px 20px", cursor:"pointer", transition:"background .12s",
-                  background:isActive?T.sur2:"transparent",
-                  borderLeft:isActive?`3px solid ${T.b}`:"3px solid transparent",
+                  background:isActive ? T.sur2 : "transparent",
+                  borderLeft:isActive ? `3px solid ${T.b}` : "3px solid transparent",
                   borderBottom:`1px solid ${T.br}` }}
                 onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background=T.sur2; }}
                 onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.background="transparent"; }}>
@@ -6330,23 +6450,29 @@ function PageSalaVirtual({ pats }) {
                   <div style={{ fontSize:13, fontWeight:600, color:T.tx, flex:1, minWidth:0,
                     whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.nm}</div>
                   <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0, marginLeft:8 }}>
-                    {ts&&<span style={{ fontSize:10, color:T.txS }}>{ts}</span>}
-                    {nl>0&&<span style={{ background:T.b, color:"#fff", borderRadius:99,
+                    {ts && <span style={{ fontSize:10, color:T.txS }}>{ts}</span>}
+                    {nl > 0 && <span style={{ background:T.b, color:"#fff", borderRadius:99,
                       padding:"1px 6px", fontSize:9, fontWeight:800 }}>{nl}</span>}
                   </div>
                 </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:11, color:T.txS, flex:1, whiteSpace:"nowrap",
-                    overflow:"hidden", textOverflow:"ellipsis" }}>{txt}</span>
-                </div>
+                <div style={{ fontSize:11, color:T.txS, whiteSpace:"nowrap",
+                  overflow:"hidden", textOverflow:"ellipsis" }}>{txt}</div>
                 <div style={{ fontSize:10, color:T.txS, marginTop:3 }}>{p.plano}</div>
               </div>
             );
           })}
         </div>
+        {/* Status Firebase */}
+        <div style={{ padding:"10px 16px", borderTop:`1px solid ${T.br}`,
+          fontSize:10, color: FB_CONFIGURED ? T.gr : T.am, fontWeight:600,
+          display:"flex", alignItems:"center", gap:5 }}>
+          <span style={{ width:6, height:6, borderRadius:"50%",
+            background: FB_CONFIGURED ? T.gr : T.am, display:"inline-block" }}/>
+          {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Modo demo — configure Firebase para sincronizar"}
+        </div>
       </div>
 
-      {/* Área de chat */}
+      {/* ── Área de chat ── */}
       {selPac ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
           {/* Header */}
@@ -6374,7 +6500,7 @@ function PageSalaVirtual({ pats }) {
           {/* Mensagens */}
           <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", background:T.bg,
             display:"flex", flexDirection:"column", gap:10 }}>
-            {msgs.length===0 && (
+            {msgs.length === 0 && (
               <div style={{ textAlign:"center", padding:"60px 20px", color:T.txS }}>
                 <div style={{ fontSize:40, marginBottom:14 }}>💬</div>
                 <div style={{ fontSize:13, fontWeight:600, color:T.txM }}>Nenhuma mensagem ainda</div>
@@ -6382,7 +6508,7 @@ function PageSalaVirtual({ pats }) {
               </div>
             )}
             {msgs.map(m => {
-              const isDra = m.de==="dra";
+              const isDra = m.de === "dra";
               return (
                 <div key={m.id} style={{ display:"flex", justifyContent:isDra?"flex-end":"flex-start" }}>
                   <div style={{ maxWidth:"72%" }}>
@@ -6404,7 +6530,8 @@ function PageSalaVirtual({ pats }) {
                     <div style={{ fontSize:10, color:T.txS, marginTop:3,
                       textAlign:isDra?"right":"left",
                       paddingLeft:isDra?0:4, paddingRight:isDra?4:0 }}>
-                      {isDra?"Dra. Ilza · ":""}{m.ts}
+                      {isDra ? "Dra. Ilza · " : ""}{m.ts}
+                      {isDra && m.lida && <span style={{ marginLeft:4, color:T.b }}>✓✓</span>}
                     </div>
                   </div>
                 </div>
@@ -6455,7 +6582,6 @@ function PageSalaVirtual({ pats }) {
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) {
@@ -6797,75 +6923,68 @@ export default function App(){
     </ErrorBoundary>
   );
 }
-// CRM Dra. Ilza Ezequiel v32 — Fld corrigido, Btn variant, sync Portal
+// CRM Dra. Ilza Ezequiel v33 — stBadge fix, Firebase RTDB sync CRM↔Portal
 
 /* ════════════════════════════════════════════════════════════════
-   BRIDGE CRM ↔ PORTAL — sincronização Firebase-style via localStorage
-   Qualquer mudança nos dados do CRM é broadcast para o Portal
-   e vice-versa via storage events + polling
+   BRIDGE CRM ↔ PORTAL — sincronização via Firebase RTDB (cross-origin)
+   Estrutura RTDB:
+     /salas/{pacId}/msgs/{msgId}   → mensagens do chat
+     /salas_index/{pacId}          → índice para listagem rápida
+     /notificacoes/{pacId}/{notifId} → notificações para o paciente
+   Fallback: localStorage quando Firebase não configurado
 ════════════════════════════════════════════════════════════════ */
 (function installBridge() {
-  const KEYS = {
-    pats:     "crm_pats_v26",
-    exames:   "crm_exames_v26",
-    agenda:   "crm_agenda_v26",
-    consultas:"crm_consultas_v26",
-    sync:     "crm_portal_sync_ts",
-  };
-
-  // Expor API global para Portal HTML ler/escrever dados CRM
   window.CRM_BRIDGE = {
-    getPacientes: () => { try { return JSON.parse(localStorage.getItem(KEYS.pats)||"[]"); } catch(e){return[];} },
-    getExames:    () => { try { return JSON.parse(localStorage.getItem(KEYS.exames)||"[]"); } catch(e){return[];} },
-    getAgenda:    () => { try { return JSON.parse(localStorage.getItem(KEYS.agenda)||"[]"); } catch(e){return[];} },
-    getConsultas: () => { try { return JSON.parse(localStorage.getItem(KEYS.consultas)||"[]"); } catch(e){return[];} },
+    // ── Leitura de dados (localStorage — mesmo domínio) ──
+    getPacientes: () => { try { return JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"); } catch(e){return[];} },
+    getExames:    () => { try { return JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"); } catch(e){return[];} },
+    getAgenda:    () => { try { return JSON.parse(localStorage.getItem("crm_agenda_v26")||"[]"); } catch(e){return[];} },
+    getConsultas: () => { try { return JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]"); } catch(e){return[];} },
 
-    // Portal escreve mensagem de paciente → CRM recebe
-    addMsgPortal: (pacNome, msg) => {
-      const msgs = JSON.parse(localStorage.getItem("portal_msgs_inbox")||"[]");
-      msgs.unshift({ id:"pm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false });
-      localStorage.setItem("portal_msgs_inbox", JSON.stringify(msgs));
-      localStorage.setItem(KEYS.sync, Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
+    // ── Portal envia mensagem → CRM recebe via RTDB ──
+    // (chamado pelo Portal HTML via window._fb ou fetch)
+    addMsgPortal: (pacId, pacNome, msg) => {
+      const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+      if (window._fb?.rtdb) {
+        const { rtdb: db, ref: r, push: p, set: s } = window._fb;
+        p(r(db, `salas/${pacId}/msgs`), { de:"pac", txt:msg, ts, tsNum:Date.now(), lida:false });
+        s(r(db, `salas_index/${pacId}`), { nm:pacNome, ultimaTxt:msg, ultimaTs:ts, tsNum:Date.now() });
+      } else {
+        // fallback localStorage
+        const msgs = JSON.parse(localStorage.getItem("portal_msgs_inbox")||"[]");
+        msgs.unshift({ id:"pm_"+Date.now(), pac:pacNome, pacId, msg, ts, lido:false });
+        localStorage.setItem("portal_msgs_inbox", JSON.stringify(msgs));
+        window.dispatchEvent(new StorageEvent("storage",{key:"portal_msgs_inbox"}));
+      }
     },
 
-    // CRM escreve resposta → Portal recebe
-    addMsgCRM: (pacNome, msg) => {
-      const msgs = JSON.parse(localStorage.getItem("portal_msgs_outbox")||"[]");
-      msgs.unshift({ id:"cm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false });
-      localStorage.setItem("portal_msgs_outbox", JSON.stringify(msgs));
-      localStorage.setItem(KEYS.sync, Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
+    // ── Notificar paciente (agendamento, exame, etc.) ──
+    notifyPaciente: (pacId, pacNome, tipo, detalhe) => {
+      const ts = new Date().toLocaleString("pt-BR");
+      if (window._fb?.rtdb) {
+        const { rtdb: db, ref: r, push: p } = window._fb;
+        p(r(db, `notificacoes/${pacId}`), { tipo, detalhe, ts, tsNum:Date.now(), lida:false });
+      } else {
+        const notifs = JSON.parse(localStorage.getItem("portal_notificacoes")||"[]");
+        notifs.unshift({ id:"n_"+Date.now(), pac:pacNome, pacId, tipo, detalhe, ts, lido:false });
+        localStorage.setItem("portal_notificacoes", JSON.stringify(notifs.slice(0,100)));
+      }
     },
 
-    // Notificar paciente de nova consulta/exame agendado
-    notifyPaciente: (pacNome, tipo, detalhe) => {
-      const notifs = JSON.parse(localStorage.getItem("portal_notificacoes")||"[]");
-      notifs.unshift({ id:"n_"+Date.now(), pac:pacNome, tipo, detalhe, ts: new Date().toLocaleString("pt-BR"), lido:false });
-      localStorage.setItem("portal_notificacoes", JSON.stringify(notifs.slice(0,100)));
-      localStorage.setItem(KEYS.sync, Date.now().toString());
-    },
-
-    // Badge para WhatsApp do CRM
+    // ── Contagem de mensagens não lidas (para badge no título) ──
     getMsgsPendentes: () => {
       try {
         const msgs = JSON.parse(localStorage.getItem("portal_msgs_inbox")||"[]");
         return msgs.filter(m=>!m.lido).length;
       } catch(e){return 0;}
     },
-
-    // Sync timestamp
-    getLastSync: () => localStorage.getItem(KEYS.sync) || "0",
   };
 
-  // Escuta eventos de storage (Portal rodando em outra aba/janela)
+  // Atualiza título da aba com badge de mensagens pendentes
   window.addEventListener("storage", (e) => {
     if (e.key === "portal_msgs_inbox") {
-      // Re-render badge no WhatsApp do CRM se visível
-      document.title = (() => {
-        const n = window.CRM_BRIDGE.getMsgsPendentes();
-        return n > 0 ? `(${n}) CRM Dra. Ilza` : "CRM Dra. Ilza";
-      })();
+      const n = window.CRM_BRIDGE.getMsgsPendentes();
+      document.title = n > 0 ? `(${n}) CRM Dra. Ilza` : "CRM Dra. Ilza";
     }
   });
 })();
