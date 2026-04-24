@@ -2948,6 +2948,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
 function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPacFiltro }) {
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [exameDetalhe, setExameDetalhe] = useState(null);
   const byPac    = pacFiltro ? exames.filter(e=>e.pac===pacFiltro) : exames;
   const filtered = byPac.filter(e =>
     e.pac.toLowerCase().includes(q.toLowerCase()) ||
@@ -2997,7 +2998,7 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
         {filtered.map(e => {
           const { c:ac, bg:abg } = examAccent(e.tipo);
           return (
-            <div key={e.id} style={{ background:T.sur, border:`1px solid ${T.br}`,
+            <div key={e.id} onClick={()=>setExameDetalhe(e)} style={{ background:T.sur, border:`1px solid ${T.br}`,
               borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer" }}
               onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; }}
               onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; }}>
@@ -3047,6 +3048,77 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
       {showNew && (
         <PopupNovoExame onClose={()=>setShowNew(false)}
           onSave={novo=>{ setExames(p=>[novo,...p]); setShowNew(false); }} />
+      )}
+
+      {/* Modal de detalhe do exame */}
+      {exameDetalhe && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)",
+          zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
+          onClick={()=>setExameDetalhe(null)}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{ background:T.sur, borderRadius:20, width:"100%", maxWidth:480,
+              boxShadow:"0 24px 64px rgba(0,0,0,.22)", overflow:"hidden" }}>
+            {/* Header colorido */}
+            <div style={{ background:"linear-gradient(135deg,#A8722A,#7A5018)", padding:"22px 24px",
+              display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,.7)", fontWeight:500,
+                  textTransform:"uppercase", letterSpacing:".08em", marginBottom:6 }}>Detalhe do Exame</div>
+                <div style={{ fontSize:18, fontWeight:700, color:"#fff" }}>{exameDetalhe.tipo}</div>
+              </div>
+              <button onClick={()=>setExameDetalhe(null)}
+                style={{ background:"rgba(255,255,255,.2)", border:"none", borderRadius:9,
+                  width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center",
+                  cursor:"pointer", flexShrink:0 }}>
+                <Ic n="close" sz={14} c="#fff" sw={2.5}/>
+              </button>
+            </div>
+
+            {/* Corpo */}
+            <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                {[
+                  ["Paciente", exameDetalhe.pac],
+                  ["Status",   null],
+                  ["Data",     exameDetalhe.dt || "—"],
+                  ["Local",    exameDetalhe.local || "Clínica"],
+                  ["Plano",    exameDetalhe.plano || "—"],
+                  ["Médico",   exameDetalhe.med || "Dra. Ilza Ezequiel"],
+                ].map(([label, val], i) => (
+                  <div key={i} style={{ background:T.bg, borderRadius:10, padding:"10px 14px" }}>
+                    <div style={{ fontSize:10, color:T.txS, fontWeight:500,
+                      textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
+                    {label === "Status"
+                      ? stBadge(exameDetalhe.st)
+                      : <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{val}</div>
+                    }
+                  </div>
+                ))}
+              </div>
+
+              {exameDetalhe.obs && (
+                <div style={{ background:T.bg, borderRadius:10, padding:"10px 14px" }}>
+                  <div style={{ fontSize:10, color:T.txS, fontWeight:500,
+                    textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Observação</div>
+                  <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{exameDetalhe.obs}</div>
+                </div>
+              )}
+
+              {/* Ações */}
+              <div style={{ display:"flex", gap:10, marginTop:4 }}>
+                <Btn variant="outline" icon="edit" onClick={()=>{
+                  setExameDetalhe(null);
+                }} style={{ flex:1 }}>Editar</Btn>
+                <Btn icon="check" onClick={()=>{
+                  setExames(prev => prev.map(e =>
+                    e.id === exameDetalhe.id ? { ...e, st:"Realizado" } : e
+                  ));
+                  setExameDetalhe(prev => ({ ...prev, st:"Realizado" }));
+                }} style={{ flex:1 }}>Marcar Realizado</Btn>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4320,18 +4392,7 @@ const mockLancamentos_data = (() => {
     const s = localStorage.getItem("crm_lancamentos_v26");
     if (s) return JSON.parse(s);
   } catch(e) {}
-  return [
-    { id:"l1",  pac:"Maria Aparecida Santos",   proc:"Consulta Gastroenterologia", tp:"Particular", val:800,  st:"Pago",     dt:"10/04/2026" },
-    { id:"l2",  pac:"João Carlos Oliveira",     proc:"Plano Intestino 360°",       tp:"Plano 360°", val:3000, st:"Pago",     dt:"08/04/2026" },
-    { id:"l3",  pac:"Ana Paula Rodrigues",      proc:"Retorno",                    tp:"Particular", val:400,  st:"Pendente", dt:"15/04/2026" },
-    { id:"l4",  pac:"Roberto Lima",             proc:"Consulta Gastroenterologia", tp:"Unimed",     val:0,    st:"Pago",     dt:"09/04/2026" },
-    { id:"l5",  pac:"Fernanda Costa",           proc:"Teste Respiratório SIBO",    tp:"Particular", val:660,  st:"Pago",     dt:"07/04/2026" },
-    { id:"l6",  pac:"Carlos Eduardo Mendes",    proc:"1ª Consulta",                tp:"Particular", val:800,  st:"Atrasado", dt:"01/04/2026" },
-    { id:"l7",  pac:"Patricia Almeida",         proc:"Colonoscopia (encaminhada)", tp:"Particular", val:0,    st:"Pendente", dt:"18/04/2026" },
-    { id:"l8",  pac:"Luciana Ferreira",         proc:"Plano Intestino 360°",       tp:"Plano 360°", val:3000, st:"Pendente", dt:"20/04/2026" },
-    { id:"l9",  pac:"Marcos Aurelio Souza",     proc:"Consulta Online (Tele)",     tp:"Particular", val:800,  st:"Pago",     dt:"05/04/2026" },
-    { id:"l10", pac:"Simone Batista",           proc:"Consulta Gastroenterologia", tp:"Bradesco",   val:0,    st:"Pago",     dt:"03/04/2026" },
-  ];
+  return []; // começa vazio — sem dados fictícios
 })();
 
 /* ════════════════════════════════════════════════════════════════
@@ -5605,6 +5666,22 @@ function PageHome({ setPage, usuario }) {
       return s ? JSON.parse(s) : [];
     } catch(e) { return []; }
   }, []);
+
+  // Data/hora real do sistema
+  const [agora, setAgora] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const diasSemana = ["DOMINGO","SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA","SÁBADO"];
+  const meses = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
+                 "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+  const dataStr = `${diasSemana[agora.getDay()]} · ${agora.getDate()} DE ${meses[agora.getMonth()]} DE ${agora.getFullYear()}`;
+  const hora = agora.getHours();
+  const saudacao = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
+  const emoji = hora < 12 ? "👋" : hora < 18 ? "☀️" : "🌙";
+  const nomeFirst = (usuario?.nome || "Dra. Ilza").split(" ")[0];
+
   const [activeSeries, setActiveSeries] = useState(
     Object.fromEntries(SERIES_META.map(s => [s.key, true]))
   );
@@ -5631,11 +5708,11 @@ function PageHome({ setPage, usuario }) {
         <div style={{ position:"relative" }}>
           <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,.38)",
             letterSpacing:".14em", textTransform:"uppercase", marginBottom:8 }}>
-            DOMINGO · 20 DE ABRIL DE 2026
+            {dataStr}
           </div>
           <div style={{ fontSize:30, fontWeight:800, color:"#fff",
             letterSpacing:"-.03em", lineHeight:1.15, marginBottom:8 }}>
-            Bom dia, Dra. Ilza 👋
+            {saudacao}, {nomeFirst} {emoji}
           </div>
           <div style={{ fontSize:14, color:"rgba(255,255,255,.48)", marginBottom:24, maxWidth:480 }}>
             Você tem{" "}
@@ -6059,6 +6136,22 @@ function Videoconsulta({ paciente, onEncerrar }) {
     </div>
   );
 }
+
+// Horários disponíveis gerados dinamicamente (hora atual do sistema)
+function gerarHorarios() {
+  const agora = new Date();
+  const slots = [];
+  for (let h = 7; h <= 19; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hh = String(h).padStart(2,"0");
+      const mm = String(m).padStart(2,"0");
+      slots.push(`${hh}:${mm}`);
+    }
+  }
+  return slots;
+}
+const HORARIOS = gerarHorarios();
+const OCUPADOS = []; // sem horários bloqueados por padrão
 
 function Agendamento() {
   const [nome, setNome] = useState("");
@@ -6849,7 +6942,7 @@ function CRM({usuario,onLogout,users,setUsers}){
         {/* Main area */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
           <Topbar page={page} usuario={usuario} />
-          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",background:T.bg}}>
+          <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg}}>
             {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
           </div>
         </div>
