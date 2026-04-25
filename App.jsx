@@ -66,93 +66,8 @@ function GlobalStyles() {
         to   { opacity: 1; transform: scale(1) translateY(0); }
       }
       .modal-box { animation: popIn .22s cubic-bezier(.34,1.4,.64,1) forwards; }
-
-      /* ── Responsividade ── */
-      html { font-size: 16px; }
-      @media (max-width: 1200px) {
-        html { font-size: 15px; }
-      }
-      @media (max-width: 900px) {
-        html { font-size: 14px; }
-        .page { padding: 16px 14px 48px !important; }
-        .sidebar-label { display: none !important; }
-      }
-      @media (max-width: 640px) {
-        html { font-size: 13px; }
-        .page { padding: 12px 10px 48px !important; }
-      }
-
-      /* Grid responsivo para cards */
-      .grid-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 14px;
-      }
-      @media (max-width: 640px) {
-        .grid-cards { grid-template-columns: 1fr !important; }
-      }
-
-      /* Tabelas responsivas */
-      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-
-      /* Topbar responsiva */
-      .topbar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-      /* Touch targets */
-      @media (hover: none) {
-        button, a { min-height: 42px; }
-      }
     `}</style>
   );
-}
-
-/* ════════════════════════════════════════════════════════════════
-   useCloudState — localStorage + Firebase Firestore sincronizado
-   Sincroniza dados em tempo real entre PC, celular e tablet
-   Estrutura Firestore: clinica/{docId} → { data: [...] }
-════════════════════════════════════════════════════════════════ */
-function useCloudState(docName, localKey, defaultVal = []) {
-  const [value, setValue] = useState(() => {
-    try { const s = localStorage.getItem(localKey); return s ? JSON.parse(s) : defaultVal; }
-    catch(e) { return defaultVal; }
-  });
-  const [loading, setLoading] = useState(FB_CONFIGURED);
-
-  useEffect(() => {
-    // Sempre persiste localmente (fallback e cache offline)
-    try { localStorage.setItem(localKey, JSON.stringify(value)); } catch(e) {}
-  }, [value, localKey]);
-
-  useEffect(() => {
-    if (!FB_CONFIGURED || !db) { setLoading(false); return; }
-    // Escuta em tempo real — atualiza em todos os dispositivos
-    const ref = doc(db, "crm_clinica", docName);
-    const unsub = onSnapshot(ref, snap => {
-      if (snap.exists()) {
-        const data = snap.data().data;
-        if (Array.isArray(data)) {
-          setValue(data);
-          try { localStorage.setItem(localKey, JSON.stringify(data)); } catch(e) {}
-        }
-      }
-      setLoading(false);
-    }, () => setLoading(false));
-    return () => unsub();
-  }, [docName, localKey]);
-
-  // Setter que salva localmente E no Firebase
-  const setCloud = useCallback((updater) => {
-    setValue(prev => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      if (FB_CONFIGURED && db) {
-        setDoc(doc(db, "crm_clinica", docName), { data: next, ts: Date.now() })
-          .catch(e => console.warn("[Cloud]", e));
-      }
-      return next;
-    });
-  }, [docName]);
-
-  return [value, setCloud, loading];
 }
 
 // ─── Icones SVG v26 ────────────────────────────────────────────────────────────
@@ -3033,7 +2948,6 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
 function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPacFiltro }) {
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [exameDetalhe, setExameDetalhe] = useState(null);
   const byPac    = pacFiltro ? exames.filter(e=>e.pac===pacFiltro) : exames;
   const filtered = byPac.filter(e =>
     e.pac.toLowerCase().includes(q.toLowerCase()) ||
@@ -3083,7 +2997,7 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
         {filtered.map(e => {
           const { c:ac, bg:abg } = examAccent(e.tipo);
           return (
-            <div key={e.id} onClick={()=>setExameDetalhe(e)} style={{ background:T.sur, border:`1px solid ${T.br}`,
+            <div key={e.id} style={{ background:T.sur, border:`1px solid ${T.br}`,
               borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer" }}
               onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; }}
               onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; }}>
@@ -3133,77 +3047,6 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
       {showNew && (
         <PopupNovoExame onClose={()=>setShowNew(false)}
           onSave={novo=>{ setExames(p=>[novo,...p]); setShowNew(false); }} />
-      )}
-
-      {/* Modal de detalhe do exame */}
-      {exameDetalhe && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)",
-          zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
-          onClick={()=>setExameDetalhe(null)}>
-          <div onClick={e=>e.stopPropagation()}
-            style={{ background:T.sur, borderRadius:20, width:"100%", maxWidth:480,
-              boxShadow:"0 24px 64px rgba(0,0,0,.22)", overflow:"hidden" }}>
-            {/* Header colorido */}
-            <div style={{ background:"linear-gradient(135deg,#A8722A,#7A5018)", padding:"22px 24px",
-              display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-              <div>
-                <div style={{ fontSize:11, color:"rgba(255,255,255,.7)", fontWeight:500,
-                  textTransform:"uppercase", letterSpacing:".08em", marginBottom:6 }}>Detalhe do Exame</div>
-                <div style={{ fontSize:18, fontWeight:700, color:"#fff" }}>{exameDetalhe.tipo}</div>
-              </div>
-              <button onClick={()=>setExameDetalhe(null)}
-                style={{ background:"rgba(255,255,255,.2)", border:"none", borderRadius:9,
-                  width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center",
-                  cursor:"pointer", flexShrink:0 }}>
-                <Ic n="close" sz={14} c="#fff" sw={2.5}/>
-              </button>
-            </div>
-
-            {/* Corpo */}
-            <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:14 }}>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                {[
-                  ["Paciente", exameDetalhe.pac],
-                  ["Status",   null],
-                  ["Data",     exameDetalhe.dt || "—"],
-                  ["Local",    exameDetalhe.local || "Clínica"],
-                  ["Plano",    exameDetalhe.plano || "—"],
-                  ["Médico",   exameDetalhe.med || "Dra. Ilza Ezequiel"],
-                ].map(([label, val], i) => (
-                  <div key={i} style={{ background:T.bg, borderRadius:10, padding:"10px 14px" }}>
-                    <div style={{ fontSize:10, color:T.txS, fontWeight:500,
-                      textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
-                    {label === "Status"
-                      ? stBadge(exameDetalhe.st)
-                      : <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{val}</div>
-                    }
-                  </div>
-                ))}
-              </div>
-
-              {exameDetalhe.obs && (
-                <div style={{ background:T.bg, borderRadius:10, padding:"10px 14px" }}>
-                  <div style={{ fontSize:10, color:T.txS, fontWeight:500,
-                    textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Observação</div>
-                  <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{exameDetalhe.obs}</div>
-                </div>
-              )}
-
-              {/* Ações */}
-              <div style={{ display:"flex", gap:10, marginTop:4 }}>
-                <Btn variant="outline" icon="edit" onClick={()=>{
-                  setExameDetalhe(null);
-                }} style={{ flex:1 }}>Editar</Btn>
-                <Btn icon="check" onClick={()=>{
-                  setExames(prev => prev.map(e =>
-                    e.id === exameDetalhe.id ? { ...e, st:"Realizado" } : e
-                  ));
-                  setExameDetalhe(prev => ({ ...prev, st:"Realizado" }));
-                }} style={{ flex:1 }}>Marcar Realizado</Btn>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -4005,7 +3848,8 @@ function PopupNovaConsulta({ onClose, onSave }) {
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
 function PageConsultas() {
-  const [consultas, setConsultas] = useCloudState("consultas", "crm_consultas_v26", []);
+  const [consultas, setConsultas] = useState(()=>{try{const s=localStorage.getItem("crm_consultas_v26");return s?JSON.parse(s):[];}catch(e){return [];}});
+  useEffect(()=>{localStorage.setItem("crm_consultas_v26",JSON.stringify(consultas));},[consultas]);
   const [showNew, setShowNew] = useState(false);
   const [filtro, setFiltro] = useState("Todos");
   const [q, setQ] = useState("");
@@ -4476,7 +4320,18 @@ const mockLancamentos_data = (() => {
     const s = localStorage.getItem("crm_lancamentos_v26");
     if (s) return JSON.parse(s);
   } catch(e) {}
-  return []; // começa vazio — sem dados fictícios
+  return [
+    { id:"l1",  pac:"Maria Aparecida Santos",   proc:"Consulta Gastroenterologia", tp:"Particular", val:800,  st:"Pago",     dt:"10/04/2026" },
+    { id:"l2",  pac:"João Carlos Oliveira",     proc:"Plano Intestino 360°",       tp:"Plano 360°", val:3000, st:"Pago",     dt:"08/04/2026" },
+    { id:"l3",  pac:"Ana Paula Rodrigues",      proc:"Retorno",                    tp:"Particular", val:400,  st:"Pendente", dt:"15/04/2026" },
+    { id:"l4",  pac:"Roberto Lima",             proc:"Consulta Gastroenterologia", tp:"Unimed",     val:0,    st:"Pago",     dt:"09/04/2026" },
+    { id:"l5",  pac:"Fernanda Costa",           proc:"Teste Respiratório SIBO",    tp:"Particular", val:660,  st:"Pago",     dt:"07/04/2026" },
+    { id:"l6",  pac:"Carlos Eduardo Mendes",    proc:"1ª Consulta",                tp:"Particular", val:800,  st:"Atrasado", dt:"01/04/2026" },
+    { id:"l7",  pac:"Patricia Almeida",         proc:"Colonoscopia (encaminhada)", tp:"Particular", val:0,    st:"Pendente", dt:"18/04/2026" },
+    { id:"l8",  pac:"Luciana Ferreira",         proc:"Plano Intestino 360°",       tp:"Plano 360°", val:3000, st:"Pendente", dt:"20/04/2026" },
+    { id:"l9",  pac:"Marcos Aurelio Souza",     proc:"Consulta Online (Tele)",     tp:"Particular", val:800,  st:"Pago",     dt:"05/04/2026" },
+    { id:"l10", pac:"Simone Batista",           proc:"Consulta Gastroenterologia", tp:"Bradesco",   val:0,    st:"Pago",     dt:"03/04/2026" },
+  ];
 })();
 
 /* ════════════════════════════════════════════════════════════════
@@ -4499,33 +4354,19 @@ function Badge({ label, color, bg, brd }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   stBadge — badge de status global (pacientes, exames, consultas)
-════════════════════════════════════════════════════════════════ */
-function stBadge(st) {
-  const m = {
-    "Ativo":      [T.gr,  T.grB,  T.grBr],
-    "Inativo":    [T.re,  T.reB,  T.reBr],
-    "Pendente":   [T.am,  T.amB,  T.amBr],
-    "Pago":       [T.gr,  T.grB,  T.grBr],
-    "Atrasado":   [T.re,  T.reB,  T.reBr],
-    "Cancelado":  [T.re,  T.reB,  T.reBr],
-    "Confirmado": [T.gr,  T.grB,  T.grBr],
-    "Aguardando": [T.am,  T.amB,  T.amBr],
-    "Realizado":  [T.pu,  T.puB,  T.puBr],
-    "Solicitado": [T.am,  T.amB,  T.amBr],
-    "Concluído":  [T.pu,  T.puB,  T.puBr],
-    "Novo":       [T.b,   T.bL,   T.b+"44"],
-  };
-  const [c, b, br] = m[st] || [T.txM, T.sur2, T.br];
-  return <Badge label={st || "—"} color={c} bg={b} brd={br} />;
-}
-
-/* ════════════════════════════════════════════════════════════════
    FINANCEIRO
 ════════════════════════════════════════════════════════════════ */
 
 function PageFinancas() {
-  const [lancamentos, setLancamentos] = useCloudState("lancamentos", "crm_lancamentos_v26", []);
+  const [lancamentos, setLancamentos] = useState(() => {
+    try {
+      const s = localStorage.getItem("crm_lancamentos_v26");
+      return s ? JSON.parse(s) : mockLancamentos_data;
+    } catch(e) { return mockLancamentos_data; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("crm_lancamentos_v26", JSON.stringify(lancamentos)); } catch(e) {}
+  }, [lancamentos]);
   const [filtro, setFiltro] = useState("Todos");
   const total = lancamentos.reduce((s,l)=>s+l.val,0);
   const pago  = lancamentos.filter(l=>l.st==="Pago").reduce((s,l)=>s+l.val,0);
@@ -4628,7 +4469,8 @@ function PageFinancas() {
 
 
 function PageMarketing({usuario}){
-  const [tarefas,setTarefas]=useCloudState("marketing","crm_marketing_v26",[]);
+  const [tarefas,setTarefas]=useState(()=>JSON.parse(localStorage.getItem("crm_marketing_v26")||"[]"));
+  useEffect(()=>{localStorage.setItem("crm_marketing_v26",JSON.stringify(tarefas));},[tarefas]);
   const [showNew,setShowNew]=useState(false);
   const [form,setForm]=useState({titulo:"",cat:"Instagram",prazo:"",st:"pendente",prior:"media"});
   const priCor={alta:C.red,media:C.amber,baixa:C.green};
@@ -5741,22 +5583,6 @@ function PageHome({ setPage, usuario }) {
       return s ? JSON.parse(s) : [];
     } catch(e) { return []; }
   }, []);
-
-  // Data/hora real do sistema
-  const [agora, setAgora] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setAgora(new Date()), 60000);
-    return () => clearInterval(t);
-  }, []);
-  const diasSemana = ["DOMINGO","SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA","SÁBADO"];
-  const meses = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
-                 "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
-  const dataStr = `${diasSemana[agora.getDay()]} · ${agora.getDate()} DE ${meses[agora.getMonth()]} DE ${agora.getFullYear()}`;
-  const hora = agora.getHours();
-  const saudacao = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
-  const emoji = hora < 12 ? "👋" : hora < 18 ? "☀️" : "🌙";
-  const nomeFirst = (usuario?.nome || "Dra. Ilza").split(" ")[0];
-
   const [activeSeries, setActiveSeries] = useState(
     Object.fromEntries(SERIES_META.map(s => [s.key, true]))
   );
@@ -5783,11 +5609,11 @@ function PageHome({ setPage, usuario }) {
         <div style={{ position:"relative" }}>
           <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,.38)",
             letterSpacing:".14em", textTransform:"uppercase", marginBottom:8 }}>
-            {dataStr}
+            DOMINGO · 20 DE ABRIL DE 2026
           </div>
           <div style={{ fontSize:30, fontWeight:800, color:"#fff",
             letterSpacing:"-.03em", lineHeight:1.15, marginBottom:8 }}>
-            {saudacao}, {nomeFirst} {emoji}
+            Bom dia, Dra. Ilza 👋
           </div>
           <div style={{ fontSize:14, color:"rgba(255,255,255,.48)", marginBottom:24, maxWidth:480 }}>
             Você tem{" "}
@@ -6212,22 +6038,6 @@ function Videoconsulta({ paciente, onEncerrar }) {
   );
 }
 
-// Horários disponíveis gerados dinamicamente (hora atual do sistema)
-function gerarHorarios() {
-  const agora = new Date();
-  const slots = [];
-  for (let h = 7; h <= 19; h++) {
-    for (let m = 0; m < 60; m += 30) {
-      const hh = String(h).padStart(2,"0");
-      const mm = String(m).padStart(2,"0");
-      slots.push(`${hh}:${mm}`);
-    }
-  }
-  return slots;
-}
-const HORARIOS = gerarHorarios();
-const OCUPADOS = []; // sem horários bloqueados por padrão
-
 function Agendamento() {
   const [nome, setNome] = useState("");
   const [motivo, setMotivo] = useState("Retorno");
@@ -6437,169 +6247,104 @@ const NAV=[
 
 
 // ─── PAGE: SALA VIRTUAL ───────────────────────────────────────────────────────
-// Sincroniza em tempo real via Firebase RTDB (cross-origin com o Portal)
-// Fallback: localStorage quando Firebase não está configurado
+const SALA_MSGS_INIT = {};
 
 function PageSalaVirtual({ pats }) {
-  const [allMsgs, setAllMsgs] = useState({});
-  const [selPac, setSelPac]   = useState(null);
-  const [texto, setTexto]     = useState("");
-  const [busca, setBusca]     = useState("");
-  const [online, setOnline]   = useState({});
+  // ── Estado ──
+  const [portalPacs, setPortalPacs] = useState({});   // salas_index do Firebase
+  const [msgs, setMsgs]             = useState([]);   // mensagens do paciente selecionado
+  const [selPac, setSelPac]         = useState(null);
+  const [texto, setTexto]           = useState("");
+  const [busca, setBusca]           = useState("");
   const bottomRef = useRef();
   const inputRef  = useRef();
-  const unsubs    = useRef({});
 
-  // ── Carrega mensagens: Firebase RTDB se disponível, senão localStorage ──
-  useEffect(() => {
-    if (!FB_CONFIGURED || !rtdb) {
-      try {
-        const saved = JSON.parse(localStorage.getItem("crm_sala_msgs") || "{}");
-        setAllMsgs(saved);
-      } catch {}
-      return;
-    }
-
-    // Escuta todas as conversas em tempo real (apenas as do paciente selecionado)
-    // A leitura global de índice vem de /salas_index para listar pacientes com msgs
-    const idxRef = ref(rtdb, "salas_index");
-    const unsub = onValue(idxRef, snap => {
-      const val = snap.val() || {};
-      // Mantém o estado de online/última mensagem por paciente
-      setOnline(val);
+  // ── Escuta /salas_index em tempo real (fila do Portal) ──
+  useEffect(()=>{
+    if(!FB_CONFIGURED || !rtdb) return;
+    const r = ref(rtdb, "salas_index");
+    const unsub = onValue(r, snap => {
+      setPortalPacs(snap.val() || {});
     });
-    return () => off(idxRef);
+    return () => off(r);
   }, []);
 
-  // ── Escuta mensagens do paciente selecionado em tempo real ──
-  useEffect(() => {
-    if (!selPac) return;
-
-    if (!FB_CONFIGURED || !rtdb) {
-      // fallback localStorage
-      const saved = JSON.parse(localStorage.getItem("crm_sala_msgs") || "{}");
-      setAllMsgs(saved);
-      return;
-    }
-
-    const salaRef = ref(rtdb, `salas/${selPac.id}/msgs`);
-    const unsub = onValue(salaRef, snap => {
+  // ── Escuta mensagens do paciente selecionado ──
+  useEffect(()=>{
+    if(!selPac || !FB_CONFIGURED || !rtdb) return;
+    const r = ref(rtdb, `salas/${selPac.id}/msgs`);
+    const unsub = onValue(r, snap => {
       const val = snap.val();
-      const lista = val ? Object.entries(val)
-        .map(([k,v]) => ({ id: k, ...v }))
-        .sort((a,b) => (a.tsNum||0) - (b.tsNum||0))
+      const lista = val
+        ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
         : [];
-      setAllMsgs(prev => ({ ...prev, [selPac.id]: lista }));
-
-      // Marca mensagens do paciente como lidas
+      setMsgs(lista);
+      // Marca como lidas
       const updates = {};
-      lista.forEach(m => {
-        if (m.de === "pac" && !m.lida) updates[`salas/${selPac.id}/msgs/${m.id}/lida`] = true;
-      });
-      if (Object.keys(updates).length > 0) update(ref(rtdb), updates);
+      lista.forEach(m=>{ if(m.de==="pac"&&!m.lida) updates[`salas/${selPac.id}/msgs/${m.id}/lida`]=true; });
+      if(Object.keys(updates).length) update(ref(rtdb), updates);
     });
-    return () => off(salaRef);
+    return () => off(r);
   }, [selPac]);
 
-  // ── Scroll para baixo ao mudar mensagens ──
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [allMsgs, selPac]);
+  // ── Scroll automático ──
+  useEffect(()=>{
+    bottomRef.current?.scrollIntoView({ behavior:"smooth" });
+  }, [msgs, selPac]);
 
-  const msgs = selPac ? (allMsgs[selPac.id] || []) : [];
+  // ── Apenas pacientes ativos no Portal ──
+  const allPacientes = useMemo(() => {
+    return Object.entries(portalPacs).map(([id, info]) => ({
+      id,
+      nm:      info.nm    || id,
+      plano:   info.plano || "Portal",
+      premium: !!info.premium,
+      status:  info.status || "aguardando",
+      ultimaTxt: info.ultimaTxt || "",
+      ultimaTs:  info.ultimaTs  || "",
+      _portal: true,
+    }));
+  }, [portalPacs]);
 
   function enviar() {
     const txt = texto.trim();
-    if (!txt || !selPac) return;
-    const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const nova = { de: "dra", txt, ts, tsNum: Date.now(), lida: true };
-
-    if (FB_CONFIGURED && rtdb) {
-      const salaRef = ref(rtdb, `salas/${selPac.id}/msgs`);
-      push(salaRef, nova);
-      // Atualiza índice com última mensagem
-      set(ref(rtdb, `salas_index/${selPac.id}`), {
-        nm: selPac.nm,
-        ultimaTxt: "Dra: " + txt,
-        ultimaTs: ts,
-        tsNum: Date.now(),
-      });
-    } else {
-      // fallback localStorage
-      const nova2 = { ...nova, id: "m" + Date.now() };
-      setAllMsgs(prev => {
-        const updated = { ...prev, [selPac.id]: [...(prev[selPac.id] || []), nova2] };
-        localStorage.setItem("crm_sala_msgs", JSON.stringify(updated));
-        return updated;
-      });
-    }
+    if(!txt || !selPac || !FB_CONFIGURED || !rtdb) return;
+    const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    push(ref(rtdb, `salas/${selPac.id}/msgs`), {
+      txt, de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true
+    });
+    set(ref(rtdb, `salas_index/${selPac.id}`), {
+      ...portalPacs[selPac.id],
+      ultimaTxt: "Dra: "+txt,
+      ultimaTs: ts,
+      tsNum: Date.now(),
+    });
     setTexto("");
-    setTimeout(() => inputRef.current?.focus(), 50);
+    setTimeout(()=>inputRef.current?.focus(), 50);
   }
 
-  function onKey(e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
-  }
-
-  const ultimaMsg = pac => {
-    const ms = allMsgs[pac.id] || [];
-    if (!ms.length) {
-      // Tenta pegar do índice Firebase
-      const idx = online[pac.id];
-      if (idx) return { txt: idx.ultimaTxt || "Sem mensagens", ts: idx.ultimaTs || "" };
-      return { txt: "Nenhuma mensagem ainda", ts: "" };
-    }
-    const m = ms[ms.length - 1];
-    return { txt: (m.de === "dra" ? "Você: " : "") + m.txt, ts: m.ts };
-  };
+  function onKey(e) { if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }
 
   const naoLidas = pac => {
-    const ms = allMsgs[pac.id] || [];
-    return ms.filter(m => m.de === "pac" && !m.lida).length;
+    // Conta msgs do Firebase se disponível, senão 0
+    return 0;
   };
 
-  // ── Apenas pacientes ativos no Portal (salas_index) ──
-  // Não mostra pacientes do CRM que nunca acessaram o Portal
-  const allPacientes = useMemo(() => {
-    return Object.entries(online).map(([id, info]) => ({
-      id,
-      nm:      info.nm    || id,
-      plano:   info.plano || 'Portal',
-      premium: !!info.premium,
-      status:  info.status || 'aguardando',
-      _portal: true,
-    }));
-  }, [online]);
+  const ultimaMsg = pac => {
+    if(pac.ultimaTxt) return { txt: pac.ultimaTxt, ts: pac.ultimaTs };
+    return { txt:"Nenhuma mensagem ainda", ts:"" };
+  };
 
-  const totalNaoLidas = allPacientes.reduce((s, p) => s + naoLidas(p), 0);
-
-  const filtrados = allPacientes.filter(p => p.nm.toLowerCase().includes(busca.toLowerCase()));
-
-  // Ordena: pacientes com mensagens não lidas primeiro
-  const ordenados = [...filtrados].sort((a, b) => {
-    const na = naoLidas(a), nb = naoLidas(b);
-    if (na !== nb) return nb - na;
-    const ta = (online[a.id]?.tsNum || 0);
-    const tb = (online[b.id]?.tsNum || 0);
-    return tb - ta;
-  });
+  const filtrados = allPacientes.filter(p=>p.nm.toLowerCase().includes(busca.toLowerCase()));
 
   return (
     <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
 
-      {/* ── Lista de pacientes ── */}
+      {/* Lista de pacientes */}
       <div style={{ width:300, flexShrink:0, borderRight:`1px solid ${T.br}`,
         display:"flex", flexDirection:"column", background:T.sur }}>
         <div style={{ padding:"20px 20px 14px", borderBottom:`1px solid ${T.br}` }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-            <div style={{ fontSize:16, fontWeight:800, color:T.tx }}>Sala Virtual</div>
-            {totalNaoLidas > 0 && (
-              <span style={{ background:T.b, color:"#fff", borderRadius:99,
-                padding:"2px 8px", fontSize:10, fontWeight:800 }}>
-                {totalNaoLidas} nova{totalNaoLidas > 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
+          <div style={{ fontSize:16, fontWeight:800, color:T.tx, marginBottom:12 }}>Sala Virtual</div>
           <div style={{ position:"relative" }}>
             <div style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)" }}>
               <Ic n="search" sz={14} c={T.txS}/>
@@ -6610,20 +6355,20 @@ function PageSalaVirtual({ pats }) {
           </div>
         </div>
         <div style={{ flex:1, overflowY:"auto" }}>
-          {ordenados.length === 0 && (
+          {filtrados.length===0 && (
             <div style={{ padding:"40px 20px", textAlign:"center", color:T.txS, fontSize:13 }}>
               Nenhum paciente encontrado
             </div>
           )}
-          {ordenados.map(p => {
+          {filtrados.map(p => {
             const { txt, ts } = ultimaMsg(p);
             const nl = naoLidas(p);
             const isActive = selPac?.id === p.id;
             return (
               <div key={p.id} onClick={()=>setSelPac(p)}
                 style={{ padding:"14px 20px", cursor:"pointer", transition:"background .12s",
-                  background:isActive ? T.sur2 : "transparent",
-                  borderLeft:isActive ? `3px solid ${T.b}` : "3px solid transparent",
+                  background:isActive?T.sur2:"transparent",
+                  borderLeft:isActive?`3px solid ${T.b}`:"3px solid transparent",
                   borderBottom:`1px solid ${T.br}` }}
                 onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background=T.sur2; }}
                 onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.background="transparent"; }}>
@@ -6631,29 +6376,30 @@ function PageSalaVirtual({ pats }) {
                   <div style={{ fontSize:13, fontWeight:600, color:T.tx, flex:1, minWidth:0,
                     whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.nm}</div>
                   <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0, marginLeft:8 }}>
-                    {ts && <span style={{ fontSize:10, color:T.txS }}>{ts}</span>}
-                    {nl > 0 && <span style={{ background:T.b, color:"#fff", borderRadius:99,
+                    {ts&&<span style={{ fontSize:10, color:T.txS }}>{ts}</span>}
+                    {nl>0&&<span style={{ background:T.b, color:"#fff", borderRadius:99,
                       padding:"1px 6px", fontSize:9, fontWeight:800 }}>{nl}</span>}
                   </div>
                 </div>
-                <div style={{ fontSize:11, color:T.txS, whiteSpace:"nowrap",
-                  overflow:"hidden", textOverflow:"ellipsis" }}>{txt}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:11, color:T.txS, flex:1, whiteSpace:"nowrap",
+                    overflow:"hidden", textOverflow:"ellipsis" }}>{txt}</span>
+                </div>
                 <div style={{ fontSize:10, color:T.txS, marginTop:3 }}>{p.plano}</div>
               </div>
             );
           })}
         </div>
-        {/* Status Firebase */}
         <div style={{ padding:"10px 16px", borderTop:`1px solid ${T.br}`,
-          fontSize:10, color: FB_CONFIGURED ? T.gr : T.am, fontWeight:600,
+          fontSize:10, color:FB_CONFIGURED?T.gr:T.am, fontWeight:600,
           display:"flex", alignItems:"center", gap:5 }}>
           <span style={{ width:6, height:6, borderRadius:"50%",
-            background: FB_CONFIGURED ? T.gr : T.am, display:"inline-block" }}/>
-          {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Modo demo — configure Firebase para sincronizar"}
+            background:FB_CONFIGURED?T.gr:T.am, display:"inline-block" }}/>
+          {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Firebase não configurado"}
         </div>
       </div>
 
-      {/* ── Área de chat ── */}
+      {/* Área de chat */}
       {selPac ? (
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
           {/* Header */}
@@ -6681,7 +6427,7 @@ function PageSalaVirtual({ pats }) {
           {/* Mensagens */}
           <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", background:T.bg,
             display:"flex", flexDirection:"column", gap:10 }}>
-            {msgs.length === 0 && (
+            {msgs.length===0 && (
               <div style={{ textAlign:"center", padding:"60px 20px", color:T.txS }}>
                 <div style={{ fontSize:40, marginBottom:14 }}>💬</div>
                 <div style={{ fontSize:13, fontWeight:600, color:T.txM }}>Nenhuma mensagem ainda</div>
@@ -6689,7 +6435,7 @@ function PageSalaVirtual({ pats }) {
               </div>
             )}
             {msgs.map(m => {
-              const isDra = m.de === "dra";
+              const isDra = m.de==="dra";
               return (
                 <div key={m.id} style={{ display:"flex", justifyContent:isDra?"flex-end":"flex-start" }}>
                   <div style={{ maxWidth:"72%" }}>
@@ -6711,8 +6457,7 @@ function PageSalaVirtual({ pats }) {
                     <div style={{ fontSize:10, color:T.txS, marginTop:3,
                       textAlign:isDra?"right":"left",
                       paddingLeft:isDra?0:4, paddingRight:isDra?4:0 }}>
-                      {isDra ? "Dra. Ilza · " : ""}{m.ts}
-                      {isDra && m.lida && <span style={{ marginLeft:4, color:T.b }}>✓✓</span>}
+                      {isDra?"Dra. Ilza · ":""}{m.ts}
                     </div>
                   </div>
                 </div>
@@ -6756,13 +6501,14 @@ function PageSalaVirtual({ pats }) {
           </div>
           <div style={{ background:T.bL, border:`1px solid ${T.b}28`, borderRadius:99,
             padding:"6px 20px", fontSize:12, fontWeight:600, color:T.b }}>
-            {allPacientes.length} pacientes disponíveis
+            {allPacientes.length > 0 ? `${allPacientes.length} na sala agora` : "Sala vazia"}
           </div>
         </div>
       )}
     </div>
   );
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) {
@@ -6793,10 +6539,10 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
   const NavItem = ({ item }) => {
     const active = page === item.key;
     return (
-      <button onClick={()=>setPage(item.key)} title={effectiveCollapsed?item.label:undefined}
+      <button onClick={()=>setPage(item.key)} title={collapsed?item.label:undefined}
         style={{ width:"100%", display:"flex", alignItems:"center", gap:10,
-          padding:effectiveCollapsed?"9px 0":"9px 11px", borderRadius:9, border:"none",
-          cursor:"pointer", justifyContent:effectiveCollapsed?"center":"flex-start",
+          padding:collapsed?"9px 0":"9px 11px", borderRadius:9, border:"none",
+          cursor:"pointer", justifyContent:collapsed?"center":"flex-start",
           background:active?T.sideAct:"transparent",
           borderLeft:active?`2.5px solid ${T.sideActBrd}`:"2.5px solid transparent",
           marginBottom:1, transition:"all .14s" }}
@@ -6807,35 +6553,22 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
           <span style={{ fontSize:13, fontWeight:active?600:400,
             color:active?"#fff":T.sideTx, whiteSpace:"nowrap" }}>{item.label}</span>
         )}
-        {active && !effectiveCollapsed && (
+        {active && !collapsed && (
           <span style={{ marginLeft:"auto", width:6, height:6, borderRadius:"50%",
             background:T.sideActBrd, flexShrink:0 }} />
         )}
       </button>
     );
   };
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const fn = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", fn);
-    return () => window.removeEventListener("resize", fn);
-  }, []);
-  const effectiveCollapsed = collapsed || isMobile;
-
   return (
-    <div style={{ width: isMobile ? (collapsed ? 0 : "100vw") : (collapsed ? 62 : 230),
-      background:T.side, display:"flex",
+    <div style={{ width:collapsed?62:230, background:T.side, display:"flex",
       flexDirection:"column", transition:"width .22s cubic-bezier(.4,0,.2,1)",
-      overflow:"hidden", flexShrink:0, userSelect:"none",
-      position: isMobile ? "fixed" : "relative",
-      zIndex: isMobile ? 9000 : "auto",
-      height: isMobile ? "100vh" : "auto",
-      top:0, left:0 }}>
+      overflow:"hidden", flexShrink:0, userSelect:"none" }}>
       {/* Logo */}
       <div style={{ height:62, display:"flex", alignItems:"center",
         padding:collapsed?"0 15px":"0 14px", gap:10,
         borderBottom:"1px solid rgba(255,255,255,.06)", flexShrink:0 }}>
-        {!effectiveCollapsed && (<>
+        {!collapsed && (<>
           <div style={{ width:32, height:32, borderRadius:9, overflow:"hidden",
             background:"rgba(255,255,255,.08)", display:"flex", alignItems:"center",
             justifyContent:"center", flexShrink:0 }}>
@@ -6847,7 +6580,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
             <div style={{ fontSize:10, color:T.sideLabel, lineHeight:1.3 }}>Dra. Ilza · v31</div>
           </div>
         </>)}
-        {effectiveCollapsed && (
+        {collapsed && (
           <div style={{ width:32, height:32, borderRadius:9, background:"rgba(255,255,255,.08)",
             display:"flex", alignItems:"center", justifyContent:"center" }}>
             <Ic n="spark" sz={14} c="#fff" />
@@ -6858,13 +6591,13 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
             padding:4, borderRadius:6, display:"flex", flexShrink:0, opacity:.3 }}
           onMouseEnter={e=>e.currentTarget.style.opacity="1"}
           onMouseLeave={e=>e.currentTarget.style.opacity=".3"}>
-          <Ic n={effectiveCollapsed?"chevR":"chevL"} sz={14} c="#fff" />
+          <Ic n={collapsed?"chevR":"chevL"} sz={14} c="#fff" />
         </button>
       </div>
       <nav style={{ flex:1, overflowY:"auto", padding:"10px 8px" }}>
         {sections.map((sec,si) => (
           <div key={si} style={{ marginBottom:6 }}>
-            {!effectiveCollapsed
+            {!collapsed
               ? <div style={{ fontSize:9.5, fontWeight:700, color:T.sideLabel,
                   letterSpacing:".12em", textTransform:"uppercase", padding:"10px 12px 5px" }}>{sec.label}</div>
               : si>0 ? <div style={{ height:1, background:"rgba(255,255,255,.05)", margin:"8px 6px" }}/> : null}
@@ -6904,7 +6637,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
 }
 
 
-function Topbar({ page, usuario, onMenuToggle }) {
+function Topbar({ page, usuario }) {
   const labels = {
     home:"Dashboard", pacientes:"Pacientes", exames:"Exames", consultas:"Consultas",
     telemedicina:"Telemedicina", financas:"Financeiro", estoque:"Estoque",
@@ -6915,24 +6648,10 @@ function Topbar({ page, usuario, onMenuToggle }) {
   return (
     <div style={{ height:62, background:T.sur, borderBottom:`1px solid ${T.br}`,
       display:"flex", alignItems:"center", justifyContent:"space-between",
-      padding:"0 16px", flexShrink:0 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-        {/* Botão hamburger — aparece no mobile */}
-        <button onClick={onMenuToggle}
-          style={{ background:T.sur2, border:`1.5px solid ${T.br}`, borderRadius:10,
-            width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center",
-            cursor:"pointer", flexShrink:0 }}>
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none"
-            stroke={T.txM} strokeWidth={2} strokeLinecap="round">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
-        </button>
-        <div>
-          <div className="topbar-title" style={{ fontSize:17, fontWeight:700, color:T.tx, letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
-          <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia · IMES Santos</div>
-        </div>
+      padding:"0 28px", flexShrink:0 }}>
+      <div>
+        <div style={{ fontSize:17, fontWeight:700, color:T.tx, letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
+        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia · IMES Santos</div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button style={{ position:"relative", background:T.sur2, border:`1.5px solid ${T.br}`,
@@ -6965,16 +6684,15 @@ function Topbar({ page, usuario, onMenuToggle }) {
 
 function CRM({usuario,onLogout,users,setUsers}){
   const [page,setPage]=useState("home");
-
-  // ── Estado sincronizado na nuvem (Firebase Firestore) ──
-  // Funciona em PC, celular e tablet — mesmo dado, tempo real
-  const [pats, setPats, patsLoading]         = useCloudState("pacientes",  "crm_pats_v26",     []);
-  const [estoqueItens, setEstoqueItens]       = useCloudState("estoque",    "crm_estoque_v26",  []);
-  const [allExames, setAllExames]             = useCloudState("exames",     "crm_exames_v26",   []);
-
+  const [pats,setPats]=useState(()=>JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"));
+  // Persiste pacientes no localStorage a cada alteracao
+  useEffect(()=>{ localStorage.setItem("crm_pats_v26", JSON.stringify(pats)); },[pats]);
   const patsState=[pats,setPats];
-  // Fila prioridade / sidebar collapse
+  // Fila prioridade
+  const [filaPrioridadeVis,setFilaPrioridadeVis]=useState(false);
   const [col,setCol]=useState(false);
+  const [estoqueItens,setEstoqueItens]=useState(()=>JSON.parse(localStorage.getItem("crm_estoque_v26")||"[]"));
+  useEffect(()=>{localStorage.setItem("crm_estoque_v26",JSON.stringify(estoqueItens));},[estoqueItens]);
   const [alertasDismissed,setAlertasDismissed]=useState([]);
   const [showSair,setShowSair]=useState(false);   // ← popup confirmação sair
 
@@ -6995,11 +6713,12 @@ function CRM({usuario,onLogout,users,setUsers}){
   const estoqueState=[estoqueItens,setEstoqueItens];
 
   // useMemo evita recriar os componentes de pagina a cada render
+  const [allExames, setAllExames] = useState(()=>JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"));
   const [pacFiltro, setPacFiltro] = useState(null);
+  useEffect(()=>{ localStorage.setItem("crm_exames_v26",JSON.stringify(allExames)); },[allExames]);
 
   const pages = useMemo(() => ({
     home:        <PageHome setPage={setPage} usuario={usuario}/>,
-    sala:        <PageSalaVirtual pats={pats} />,
     whatsapp:    <PageWhatsApp usuario={usuario} patsState={patsState}/>,
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
@@ -7056,8 +6775,8 @@ function CRM({usuario,onLogout,users,setUsers}){
 
         {/* Main area */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-          <Topbar page={page} usuario={usuario} onMenuToggle={()=>setCol(c=>!c)} />
-          <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg}}>
+          <Topbar page={page} usuario={usuario} />
+          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",background:T.bg}}>
             {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
           </div>
         </div>
@@ -7131,68 +6850,75 @@ export default function App(){
     </ErrorBoundary>
   );
 }
-// CRM Dra. Ilza Ezequiel v33 — stBadge fix, Firebase RTDB sync CRM↔Portal
+// CRM Dra. Ilza Ezequiel v32 — Fld corrigido, Btn variant, sync Portal
 
 /* ════════════════════════════════════════════════════════════════
-   BRIDGE CRM ↔ PORTAL — sincronização via Firebase RTDB (cross-origin)
-   Estrutura RTDB:
-     /salas/{pacId}/msgs/{msgId}   → mensagens do chat
-     /salas_index/{pacId}          → índice para listagem rápida
-     /notificacoes/{pacId}/{notifId} → notificações para o paciente
-   Fallback: localStorage quando Firebase não configurado
+   BRIDGE CRM ↔ PORTAL — sincronização Firebase-style via localStorage
+   Qualquer mudança nos dados do CRM é broadcast para o Portal
+   e vice-versa via storage events + polling
 ════════════════════════════════════════════════════════════════ */
 (function installBridge() {
+  const KEYS = {
+    pats:     "crm_pats_v26",
+    exames:   "crm_exames_v26",
+    agenda:   "crm_agenda_v26",
+    consultas:"crm_consultas_v26",
+    sync:     "crm_portal_sync_ts",
+  };
+
+  // Expor API global para Portal HTML ler/escrever dados CRM
   window.CRM_BRIDGE = {
-    // ── Leitura de dados (localStorage — mesmo domínio) ──
-    getPacientes: () => { try { return JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"); } catch(e){return[];} },
-    getExames:    () => { try { return JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"); } catch(e){return[];} },
-    getAgenda:    () => { try { return JSON.parse(localStorage.getItem("crm_agenda_v26")||"[]"); } catch(e){return[];} },
-    getConsultas: () => { try { return JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]"); } catch(e){return[];} },
+    getPacientes: () => { try { return JSON.parse(localStorage.getItem(KEYS.pats)||"[]"); } catch(e){return[];} },
+    getExames:    () => { try { return JSON.parse(localStorage.getItem(KEYS.exames)||"[]"); } catch(e){return[];} },
+    getAgenda:    () => { try { return JSON.parse(localStorage.getItem(KEYS.agenda)||"[]"); } catch(e){return[];} },
+    getConsultas: () => { try { return JSON.parse(localStorage.getItem(KEYS.consultas)||"[]"); } catch(e){return[];} },
 
-    // ── Portal envia mensagem → CRM recebe via RTDB ──
-    // (chamado pelo Portal HTML via window._fb ou fetch)
-    addMsgPortal: (pacId, pacNome, msg) => {
-      const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-      if (window._fb?.rtdb) {
-        const { rtdb: db, ref: r, push: p, set: s } = window._fb;
-        p(r(db, `salas/${pacId}/msgs`), { de:"pac", txt:msg, ts, tsNum:Date.now(), lida:false });
-        s(r(db, `salas_index/${pacId}`), { nm:pacNome, ultimaTxt:msg, ultimaTs:ts, tsNum:Date.now() });
-      } else {
-        // fallback localStorage
-        const msgs = JSON.parse(localStorage.getItem("portal_msgs_inbox")||"[]");
-        msgs.unshift({ id:"pm_"+Date.now(), pac:pacNome, pacId, msg, ts, lido:false });
-        localStorage.setItem("portal_msgs_inbox", JSON.stringify(msgs));
-        window.dispatchEvent(new StorageEvent("storage",{key:"portal_msgs_inbox"}));
-      }
+    // Portal escreve mensagem de paciente → CRM recebe
+    addMsgPortal: (pacNome, msg) => {
+      const msgs = JSON.parse(localStorage.getItem("portal_msgs_inbox")||"[]");
+      msgs.unshift({ id:"pm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false });
+      localStorage.setItem("portal_msgs_inbox", JSON.stringify(msgs));
+      localStorage.setItem(KEYS.sync, Date.now().toString());
+      window.dispatchEvent(new Event("storage"));
     },
 
-    // ── Notificar paciente (agendamento, exame, etc.) ──
-    notifyPaciente: (pacId, pacNome, tipo, detalhe) => {
-      const ts = new Date().toLocaleString("pt-BR");
-      if (window._fb?.rtdb) {
-        const { rtdb: db, ref: r, push: p } = window._fb;
-        p(r(db, `notificacoes/${pacId}`), { tipo, detalhe, ts, tsNum:Date.now(), lida:false });
-      } else {
-        const notifs = JSON.parse(localStorage.getItem("portal_notificacoes")||"[]");
-        notifs.unshift({ id:"n_"+Date.now(), pac:pacNome, pacId, tipo, detalhe, ts, lido:false });
-        localStorage.setItem("portal_notificacoes", JSON.stringify(notifs.slice(0,100)));
-      }
+    // CRM escreve resposta → Portal recebe
+    addMsgCRM: (pacNome, msg) => {
+      const msgs = JSON.parse(localStorage.getItem("portal_msgs_outbox")||"[]");
+      msgs.unshift({ id:"cm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false });
+      localStorage.setItem("portal_msgs_outbox", JSON.stringify(msgs));
+      localStorage.setItem(KEYS.sync, Date.now().toString());
+      window.dispatchEvent(new Event("storage"));
     },
 
-    // ── Contagem de mensagens não lidas (para badge no título) ──
+    // Notificar paciente de nova consulta/exame agendado
+    notifyPaciente: (pacNome, tipo, detalhe) => {
+      const notifs = JSON.parse(localStorage.getItem("portal_notificacoes")||"[]");
+      notifs.unshift({ id:"n_"+Date.now(), pac:pacNome, tipo, detalhe, ts: new Date().toLocaleString("pt-BR"), lido:false });
+      localStorage.setItem("portal_notificacoes", JSON.stringify(notifs.slice(0,100)));
+      localStorage.setItem(KEYS.sync, Date.now().toString());
+    },
+
+    // Badge para WhatsApp do CRM
     getMsgsPendentes: () => {
       try {
         const msgs = JSON.parse(localStorage.getItem("portal_msgs_inbox")||"[]");
         return msgs.filter(m=>!m.lido).length;
       } catch(e){return 0;}
     },
+
+    // Sync timestamp
+    getLastSync: () => localStorage.getItem(KEYS.sync) || "0",
   };
 
-  // Atualiza título da aba com badge de mensagens pendentes
+  // Escuta eventos de storage (Portal rodando em outra aba/janela)
   window.addEventListener("storage", (e) => {
     if (e.key === "portal_msgs_inbox") {
-      const n = window.CRM_BRIDGE.getMsgsPendentes();
-      document.title = n > 0 ? `(${n}) CRM Dra. Ilza` : "CRM Dra. Ilza";
+      // Re-render badge no WhatsApp do CRM se visível
+      document.title = (() => {
+        const n = window.CRM_BRIDGE.getMsgsPendentes();
+        return n > 0 ? `(${n}) CRM Dra. Ilza` : "CRM Dra. Ilza";
+      })();
     }
   });
 })();
