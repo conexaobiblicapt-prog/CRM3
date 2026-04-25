@@ -6558,19 +6558,18 @@ function PageSalaVirtual({ pats }) {
     return ms.filter(m => m.de === "pac" && !m.lida).length;
   };
 
-  // ── Mescla pacientes do CRM com usuários do Portal (salas_index) ──
+  // ── Apenas pacientes ativos no Portal (salas_index) ──
+  // Não mostra pacientes do CRM que nunca acessaram o Portal
   const allPacientes = useMemo(() => {
-    const crmIds = new Set(pats.map(p => p.id));
-    const portalOnly = Object.entries(online)
-      .filter(([id]) => !crmIds.has(id))
-      .map(([id, info]) => ({
-        id,
-        nm:   info.nm   || id,
-        plano: info.plano || "Portal",
-        _portalOnly: true,
-      }));
-    return [...pats, ...portalOnly];
-  }, [pats, online]);
+    return Object.entries(online).map(([id, info]) => ({
+      id,
+      nm:      info.nm    || id,
+      plano:   info.plano || 'Portal',
+      premium: !!info.premium,
+      status:  info.status || 'aguardando',
+      _portal: true,
+    }));
+  }, [online]);
 
   const totalNaoLidas = allPacientes.reduce((s, p) => s + naoLidas(p), 0);
 
