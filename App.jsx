@@ -6986,6 +6986,7 @@ function CRM({usuario,onLogout,users,setUsers}){
 
   const pages = useMemo(() => ({
     home:        <PageHome setPage={setPage} usuario={usuario}/>,
+    sala:        <PageSalaVirtual pats={pats} />,
     whatsapp:    <PageWhatsApp usuario={usuario} patsState={patsState}/>,
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
