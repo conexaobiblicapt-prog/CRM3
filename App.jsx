@@ -6729,6 +6729,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     financas:    <PageFinancas usuario={usuario}/>,
     estoque:     <PageEstoque usuario={usuario} estoqueState={estoqueState}/>,
     telemedicina:<PageTelemedicina usuario={usuario}/>,
+    sala:        <PageSalaVirtual pats={pats} />,
     marketing:   <PageMarketing usuario={usuario}/>,
     admin:       <PageAdmin usuario={usuario} users={users} setUsers={setUsers}/>,
     perfil:      <PagePerfil usuario={usuario} users={users} setUsers={setUsers}/>,
