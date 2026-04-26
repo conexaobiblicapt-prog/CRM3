@@ -4419,6 +4419,14 @@ function PageFinancas() {
     try { localStorage.setItem("crm_lancamentos_v26", JSON.stringify(lancamentos)); } catch(e) {}
   }, [lancamentos]);
   const [filtro, setFiltro] = useState("Todos");
+  const [confirmLimpar, setConfirmLimpar] = useState(false);
+
+  function limparHistorico() {
+    setLancamentos([]);
+    localStorage.removeItem("crm_lancamentos_v26");
+    setConfirmLimpar(false);
+  }
+
   const total = lancamentos.reduce((s,l)=>s+l.val,0);
   const pago  = lancamentos.filter(l=>l.st==="Pago").reduce((s,l)=>s+l.val,0);
   const pend  = lancamentos.filter(l=>l.st==="Pendente").reduce((s,l)=>s+l.val,0);
@@ -4432,6 +4440,31 @@ function PageFinancas() {
   };
   return (
     <div className="page" style={{ padding:"24px 28px 48px", display:"flex", flexDirection:"column", gap:20 }}>
+
+      {/* Confirm limpar */}
+      {confirmLimpar && (
+        <ConfirmPopup
+          title="Limpar histórico financeiro?"
+          msg="Todos os lançamentos serão removidos permanentemente. Esta ação não pode ser desfeita."
+          danger={true}
+          yesLabel="🗑️ Limpar tudo"
+          noLabel="Cancelar"
+          onYes={limparHistorico}
+          onNo={()=>setConfirmLimpar(false)}
+        />
+      )}
+
+      {/* Header com botão limpar */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontSize:20, fontWeight:800, color:T.tx }}>Financeiro</div>
+        <button onClick={()=>setConfirmLimpar(true)}
+          style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px",
+            borderRadius:9, border:`1px solid ${T.reBr}`, background:T.reB,
+            color:T.re, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+          🗑️ Limpar histórico
+        </button>
+      </div>
+
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14 }}>
         {[
           { label:"Total geral", val:total, c:T.tx, bg:T.sur, ic:"money", ac:T.b  },
@@ -5665,7 +5698,7 @@ function PageHome({ setPage, usuario }) {
         <div style={{ position:"relative" }}>
           <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,.38)",
             letterSpacing:".14em", textTransform:"uppercase", marginBottom:8 }}>
-            DOMINGO · 20 DE ABRIL DE 2026
+            {(()=>{const d=new Date();const dias=["DOMINGO","SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA","SÁBADO"];const meses=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];return `${dias[d.getDay()]} · ${d.getDate()} DE ${meses[d.getMonth()]} DE ${d.getFullYear()}`;})()}
           </div>
           <div style={{ fontSize:30, fontWeight:800, color:"#fff",
             letterSpacing:"-.03em", lineHeight:1.15, marginBottom:8 }}>
@@ -6094,6 +6127,14 @@ function Videoconsulta({ paciente, onEncerrar }) {
   );
 }
 
+// ─── Horários disponíveis para telemedicina ───────────────────────────────────
+const HORARIOS = [
+  "08:00","08:30","09:00","09:30","10:00","10:30",
+  "11:00","11:30","13:00","13:30","14:00","14:30",
+  "15:00","15:30","16:00","16:30",
+];
+const OCUPADOS = ["09:00","14:00","15:30"];
+
 function Agendamento() {
   const [nome, setNome] = useState("");
   const [motivo, setMotivo] = useState("Retorno");
@@ -6315,59 +6356,45 @@ function PageSalaVirtual({ pats }) {
   const [view, setView]             = useState("sala"); // "sala" | "chat"
   const [confirmEnc, setConfirmEnc] = useState(false);
   const [msgEnc, setMsgEnc]         = useState("Obrigada pela confiança! Atendimento encerrado. Cuide-se! 🌿");
-  const [refreshing, setRefreshing] = useState(false);
   const bottomRef = useRef();
   const inputRef  = useRef();
-  const selPacRef = useRef(selPac);
-  useEffect(() => { selPacRef.current = selPac; }, [selPac]);
 
   const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
 
-  // ── Funções de poll extraídas (podem ser chamadas manualmente) ──
-  const pollSala = useCallback(async () => {
-    try {
-      const r = await fetch(`${DB_URL}/salas_index.json`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
-      setPortalPacs(data || {});
-    } catch(e) { console.warn("[Sala] poll salas_index:", e.message); }
-  }, []);
-
-  const pollMsgsNow = useCallback(async () => {
-    const pac = selPacRef.current;
-    if (!pac) { setMsgs([]); return; }
-    try {
-      const r = await fetch(`${DB_URL}/salas/${pac.id}/msgs.json`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const val = await r.json();
-      const lista = val
-        ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
-        : [];
-      setMsgs(lista);
-    } catch(e) { console.warn("[Sala] poll msgs:", e.message); }
-  }, []);
-
-  // ── Botão Refresh manual ──
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await Promise.all([pollSala(), pollMsgsNow()]);
-    setTimeout(() => setRefreshing(false), 700);
-  }, [pollSala, pollMsgsNow]);
-
-  // ── Polling automático /salas_index (a cada 5s) ──
+  // ── Polling REST API /salas_index (a cada 5s) ──
   useEffect(()=>{
-    pollSala();
-    const id = setInterval(pollSala, 5000);
-    return () => clearInterval(id);
-  }, [pollSala]);
+    let active = true;
+    async function poll() {
+      try {
+        const r = await fetch(`${DB_URL}/salas_index.json`);
+        const data = await r.json();
+        if(active) setPortalPacs(data || {});
+      } catch(e) { console.warn("[Sala] poll salas_index:", e); }
+    }
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
 
-  // ── Polling automático mensagens (a cada 3s) ──
+  // ── Polling REST API mensagens do paciente selecionado (a cada 3s) ──
   useEffect(()=>{
     if(!selPac) { setMsgs([]); return; }
-    pollMsgsNow();
-    const id = setInterval(pollMsgsNow, 3000);
-    return () => clearInterval(id);
-  }, [selPac, pollMsgsNow]);
+    let active = true;
+    async function pollMsgs() {
+      try {
+        const r = await fetch(`${DB_URL}/salas/${selPac.id}/msgs.json`);
+        const val = await r.json();
+        if(!active) return;
+        const lista = val
+          ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
+          : [];
+        setMsgs(lista);
+      } catch(e) { console.warn("[Sala] poll msgs:", e); }
+    }
+    pollMsgs();
+    const id = setInterval(pollMsgs, 3000);
+    return () => { active = false; clearInterval(id); };
+  }, [selPac]);
 
   useEffect(()=>{
     bottomRef.current?.scrollIntoView({ behavior:"smooth" });
@@ -6466,7 +6493,7 @@ function PageSalaVirtual({ pats }) {
             {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Firebase não configurado"}
           </div>
         </div>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+        <div style={{ display:"flex", gap:8 }}>
           {aguardando.length > 0 && (
             <span style={{ background:T.re, color:"#fff", borderRadius:99,
               padding:"3px 12px", fontSize:11, fontWeight:800 }}>
@@ -6479,15 +6506,6 @@ function PageSalaVirtual({ pats }) {
               {atendendo.length} em atendimento
             </span>
           )}
-          <button onClick={handleRefresh} title="Atualizar fila"
-            style={{ width:34, height:34, borderRadius:10, border:`1px solid ${T.br}`,
-              background:T.sur2, cursor:"pointer", display:"flex", alignItems:"center",
-              justifyContent:"center", flexShrink:0, transition:"transform .3s",
-              transform: refreshing ? "rotate(360deg)" : "rotate(0deg)" }}>
-            <span style={{ fontSize:15, display:"block",
-              animation: refreshing ? "spin .6s linear" : "none" }}>🔄</span>
-          </button>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
 
@@ -6959,9 +6977,15 @@ function CRM({usuario,onLogout,users,setUsers}){
         />
       )}
 
-      <div style={{display:"flex",height:"100vh",background:T.bg,
-        fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden"}}>
+      <div style={{display:"flex",height:"100vh",
+        fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden",
+        position:"relative",
+        backgroundImage:"url('https://static.wixstatic.com/media/1f0134_1e5f1dc566c64df888ce425e028eb99c~mv2.jpg/v1/fill/w_1200,h_800,al_c,q_80,enc_avif,quality_auto/1f0134_1e5f1dc566c64df888ce425e028eb99c~mv2.jpg')",
+        backgroundSize:"cover",backgroundPosition:"center",backgroundAttachment:"fixed"}}>
+        <div style={{position:"fixed",inset:0,background:"linear-gradient(135deg,rgba(242,233,220,.90) 0%,rgba(200,170,130,.78) 40%,rgba(26,47,100,.55) 100%)",zIndex:0,pointerEvents:"none"}}/>
 
+        {/* Sidebar + Main — acima do overlay */}
+        <div style={{position:"relative",zIndex:1,display:"flex",flex:1,overflow:"hidden"}}>
         {/* Sidebar v26 */}
         <Sidebar
           page={page}
@@ -6979,6 +7003,7 @@ function CRM({usuario,onLogout,users,setUsers}){
             {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
           </div>
         </div>
+        </div>{/* /zIndex wrapper */}
       </div>
     </>
   );
