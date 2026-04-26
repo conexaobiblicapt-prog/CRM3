@@ -6083,7 +6083,7 @@ function PageHome({ setPage, usuario }) {
   }, []);
 
   // ── Contadores próximos 30 dias (exclui cancelados) ──
-  const hoje30  = new Date().toISOString().slice(0, 10);
+  const hoje30   = new Date().toISOString().slice(0, 10);
   const limite30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const consultasConfirmadas = consultasReal.filter(c => {
     const d  = c.dt || c.data || c.date || "";
@@ -6137,7 +6137,7 @@ function PageHome({ setPage, usuario }) {
               <>
                 Você tem{" "}
                 {consultasConfirmadas > 0 && (
-                  <><span style={{ color:"#E8C07A", fontWeight:700 }}>{consultasConfirmadas} consulta{consultasConfirmadas !== 1 ? "s" : ""} confirmada{consultasConfirmadas !== 1 ? "s" : ""}</span>{examesAgendados > 0 ? " e " : ""}</>
+                  <><span style={{ color:"#E8C07A", fontWeight:700 }}>{consultasConfirmadas} consulta{consultasConfirmadas !== 1 ? "s" : ""} confirmada{consultasConfirmadas !== 1 ? "s" : ""}</span>{examesAgendados > 0 ? " e " : " "}</>
                 )}
                 {examesAgendados > 0 && (
                   <span style={{ color:"#E8C07A", fontWeight:700 }}>{examesAgendados} exame{examesAgendados !== 1 ? "s" : ""} agendado{examesAgendados !== 1 ? "s" : ""}</span>
@@ -7162,7 +7162,7 @@ function PageSalaVirtual({ pats }) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, getBadge=()=>0, mobileOpen, setMobileOpen, isMobile }) {
+function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, getBadge=()=>0, mobileOpen, setMobileOpen, isMobile, fbSyncStatus="idle" }) {
   const isRecepcao = usuario?.role === "recepcao";
   const RECEPCAO_HIDDEN = ["financas","estoque","marketing","admin","telemedicina"];
 
@@ -7301,6 +7301,42 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
         {bottomItems.map(item => <NavItem key={item.key} item={item} />)}
       </div>
       {/* v29: footer sem avatar — apenas nome + logout */}
+      {/* ── Indicador Firebase Sync ── */}
+      {!collapsed && (
+        <div style={{
+          margin:"0 10px 6px", borderRadius:8, padding:"5px 10px",
+          background: fbSyncStatus==="ok"      ? "rgba(26,122,82,.18)"
+                    : fbSyncStatus==="syncing"  ? "rgba(168,114,42,.18)"
+                    : fbSyncStatus==="error"    ? "rgba(192,57,43,.18)"
+                    : "rgba(255,255,255,.04)",
+          border: `1px solid ${
+            fbSyncStatus==="ok"      ? "rgba(26,122,82,.35)"
+            : fbSyncStatus==="syncing" ? "rgba(168,114,42,.35)"
+            : fbSyncStatus==="error"   ? "rgba(192,57,43,.35)"
+            : "rgba(255,255,255,.08)"}`,
+          display:"flex", alignItems:"center", gap:6
+        }}>
+          <span style={{
+            width:6, height:6, borderRadius:"50%", flexShrink:0,
+            background: fbSyncStatus==="ok"      ? "#1A7A52"
+                       : fbSyncStatus==="syncing" ? "#F0C060"
+                       : fbSyncStatus==="error"   ? "#C0392B"
+                       : "rgba(255,255,255,.25)",
+            animation: fbSyncStatus==="syncing" ? "pulse 1s infinite" : "none"
+          }}/>
+          <span style={{ fontSize:9.5, fontWeight:600, color:
+            fbSyncStatus==="ok"      ? "#86C9A4"
+            : fbSyncStatus==="syncing" ? "#F0C060"
+            : fbSyncStatus==="error"   ? "#F0A090"
+            : "rgba(255,255,255,.25)"
+          }}>
+            {fbSyncStatus==="ok"       ? "Firebase sincronizado ✓"
+             : fbSyncStatus==="syncing" ? "Sincronizando..."
+             : fbSyncStatus==="error"   ? "Erro ao sincronizar"
+             : "Aguardando sync..."}
+          </span>
+        </div>
+      )}
       <div style={{ padding:collapsed?"10px 15px 14px":"10px 12px 14px",
         borderTop:"1px solid rgba(255,255,255,.06)", marginTop:4 }}>
         {!collapsed ? (
@@ -7404,7 +7440,114 @@ function Topbar({ page, usuario, onMenuToggle, isMobile }) {
 // ─── Sidebar — SEM avatar no footer ──────────────────────────────────────────
 
 
+
+/* ════════════════════════════════════════════════════════════════
+   FIREBASE SYNC — sincroniza localStorage ↔ Firebase Realtime DB
+   Bidirecional:
+     • localStorage → Firebase  (a cada 10s + a cada mudança)
+     • Firebase → localStorage  (ao montar, escuta onValue)
+   Chaves sincronizadas: pats, consultas, exames, estoque, agenda
+════════════════════════════════════════════════════════════════ */
+const SYNC_DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+const SYNC_KEYS = [
+  { ls: "crm_pats_v26",      fb: "crm_data/crm_pats_v26"      },
+  { ls: "crm_consultas_v26", fb: "crm_data/crm_consultas_v26" },
+  { ls: "crm_exames_v26",    fb: "crm_data/crm_exames_v26"    },
+  { ls: "crm_estoque_v26",   fb: "crm_data/crm_estoque_v26"   },
+  { ls: "crm_agenda_v26",    fb: "crm_data/crm_agenda_v26"    },
+  { ls: "crm_fila_v25",      fb: "crm_data/crm_fila_v25"      },
+];
+
+// Escreve um item no Firebase via REST (sem SDK)
+async function fbWrite(path, value) {
+  try {
+    await fetch(`${SYNC_DB_URL}/${path}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+  } catch(e) { /* silencioso — offline */ }
+}
+
+// Lê um item do Firebase via REST
+async function fbRead(path) {
+  try {
+    const r = await fetch(`${SYNC_DB_URL}/${path}.json`);
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+// Hook: monta o sync ao entrar no CRM
+function useFirebaseSync() {
+  const [syncStatus, setSyncStatus] = React.useState("idle"); // idle | syncing | ok | error
+
+  React.useEffect(() => {
+    let active = true;
+
+    // ── 1) Na montagem: puxa do Firebase e mescla com localStorage ──
+    async function pullFromFirebase() {
+      setSyncStatus("syncing");
+      let updated = false;
+      for (const k of SYNC_KEYS) {
+        try {
+          const fbVal = await fbRead(k.fb);
+          if (!active) return;
+          if (fbVal && Array.isArray(fbVal) && fbVal.length > 0) {
+            const lsRaw = localStorage.getItem(k.ls);
+            const lsVal = lsRaw ? JSON.parse(lsRaw) : [];
+            // Firebase vence se tiver mais dados
+            if (fbVal.length >= lsVal.length) {
+              localStorage.setItem(k.ls, JSON.stringify(fbVal));
+              updated = true;
+            }
+          }
+        } catch(e) {}
+      }
+      if (active) {
+        setSyncStatus("ok");
+        if (updated) window.dispatchEvent(new Event("storage"));
+      }
+    }
+
+    // ── 2) Envia localStorage → Firebase ──
+    async function pushToFirebase() {
+      setSyncStatus("syncing");
+      for (const k of SYNC_KEYS) {
+        try {
+          const raw = localStorage.getItem(k.ls);
+          const val = raw ? JSON.parse(raw) : [];
+          await fbWrite(k.fb, val);
+        } catch(e) {}
+      }
+      // Salva timestamp do último sync
+      await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
+      if (active) setSyncStatus("ok");
+    }
+
+    // Sequência: puxa primeiro, depois envia
+    pullFromFirebase().then(() => pushToFirebase());
+
+    // Polling: envia a cada 15s
+    const interval = setInterval(pushToFirebase, 15000);
+
+    // Escuta mudanças locais (outro componente alterou o localStorage)
+    const onStorage = () => { if(active) pushToFirebase(); };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  return syncStatus;
+}
+
 function CRM({usuario,onLogout,users,setUsers}){
+  // ── Firebase Sync ──────────────────────────────────────
+  const fbSyncStatus = useFirebaseSync();
+  // ───────────────────────────────────────────────────────
   const [page,setPage]=useState("home");
   const isMobile = useIsMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -7526,6 +7669,7 @@ function CRM({usuario,onLogout,users,setUsers}){
           isMobile={isMobile}
           mobileOpen={mobileOpen}
           setMobileOpen={setMobileOpen}
+          fbSyncStatus={fbSyncStatus}
         />
 
         {/* Main area */}
