@@ -968,7 +968,10 @@ function Card({children,style={}}){
 }
 function Modal({title,onClose,children,width=600}){
   return(
-    <div onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:"rgba(13,33,55,.65)",backdropFilter:"blur(4px)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}}
+      style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",
+        background:"rgba(13,33,55,.65)",backdropFilter:"blur(4px)",zIndex:2000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div onMouseDown={e=>e.stopPropagation()} style={{background:C.card,borderRadius:18,width:"100%",maxWidth:width,maxHeight:"92vh",overflow:"auto",boxShadow:`0 24px 60px ${C.sh}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1px solid ${C.brd}`,background:C.card2,borderRadius:"18px 18px 0 0",position:"sticky",top:0,zIndex:1}}>
           <p style={{color:C.tx,fontWeight:800,fontSize:15,margin:0}}>{title}</p>
@@ -983,7 +986,7 @@ function Modal({title,onClose,children,width=600}){
 /* Popup alerta de estoque crítico */
 function ConfirmPopup({title,msg,onYes,onNo,yesLabel="Sim, confirmar",noLabel="Cancelar",danger=false}){
   return(
-    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:400,padding:28,boxShadow:"0 24px 60px rgba(0,0,0,.3)",textAlign:"center"}}>
         <div style={{width:52,height:52,borderRadius:"50%",background:danger?"rgba(192,57,43,.1)":"rgba(26,95,168,.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 14px"}}>
           {danger?"⚠️":"❓"}
@@ -1700,7 +1703,7 @@ function MemedModal({paciente,onClose,onSalvar,token}){
   }
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.65)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
       <div style={{background:C.card,borderRadius:18,width:"100%",maxWidth:900,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
 
         {/* Header */}
@@ -2115,7 +2118,7 @@ function NotaFiscalModal({paciente,total,pagamentos,procs,onClose,onEmitida}){
     <Modal title={`🧾 Nota Fiscal — ${paciente.nm}`} onClose={onClose} width={620}>
       {/* Popup: NF foi enviada ao paciente? */}
       {nfEnvioPopup&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:420,padding:30,boxShadow:"0 24px 60px rgba(0,0,0,.3)",textAlign:"center",border:"2px solid #003399"}}>
             <div style={{width:60,height:60,borderRadius:"50%",background:"#e8f0ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🧾</div>
             <p style={{color:"#003399",fontWeight:900,fontSize:17,margin:"0 0 8px",fontFamily:"Georgia,serif"}}>Nota Fiscal Emitida!</p>
@@ -3648,7 +3651,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
 
       {/* POPUP PRIORIDADE — falar com Dra */}
       {showPrioridade&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(13,33,55,.7)",backdropFilter:"blur(6px)",zIndex:5000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(13,33,55,.7)",backdropFilter:"blur(6px)",zIndex:5000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"#fff",borderRadius:20,maxWidth:480,width:"100%",overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.4)"}}>
             <div style={{background:"linear-gradient(135deg,#c0392b,#e74c3c)",padding:"20px 24px",display:"flex",gap:14,alignItems:"center"}}>
               <span style={{fontSize:32}}>🚨</span>
@@ -7543,6 +7546,11 @@ function CRM({usuario,onLogout,users,setUsers}){
   // Fila prioridade
   const [filaPrioridadeVis,setFilaPrioridadeVis]=useState(false);
   const [col,setCol]=useState(false);
+  // Atualiza CSS var --sidebar-w para modais se centralizarem corretamente
+  useEffect(()=>{
+    const w = isMobile ? 0 : (col ? 62 : 230);
+    document.documentElement.style.setProperty('--sidebar-w', w+'px');
+  },[col, isMobile]);
   const [estoqueItens,setEstoqueItens]=useState(()=>{ const r=safeLsGet("crm_estoque_v26"); return Array.isArray(r)?r:[]; });
   useEffect(()=>{localStorage.setItem("crm_estoque_v26",JSON.stringify(estoqueItens));},[estoqueItens]);
   const [alertasDismissed,setAlertasDismissed]=useState([]);
