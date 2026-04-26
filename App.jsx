@@ -967,17 +967,31 @@ function Card({children,style={}}){
   return <div style={{background:C.card,border:`1px solid ${C.brd}`,borderRadius:14,boxShadow:`0 2px 10px ${C.sh}`,...style}}>{children}</div>;
 }
 function Modal({title,onClose,children,width=600}){
+  // Bloqueia scroll do body enquanto modal está aberto
+  useEffect(()=>{
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  },[]);
   return(
     <div onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}}
       style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",
         background:"rgba(13,33,55,.65)",backdropFilter:"blur(4px)",zIndex:2000,
-        display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div onMouseDown={e=>e.stopPropagation()} style={{background:C.card,borderRadius:18,width:"100%",maxWidth:width,maxHeight:"92vh",overflow:"auto",boxShadow:`0 24px 60px ${C.sh}`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1px solid ${C.brd}`,background:C.card2,borderRadius:"18px 18px 0 0",position:"sticky",top:0,zIndex:1}}>
+        display:"flex",alignItems:"center",justifyContent:"center",
+        padding:"16px 16px",overflowY:"auto"}}>
+      <div onMouseDown={e=>e.stopPropagation()}
+        style={{background:C.card,borderRadius:18,width:"100%",maxWidth:width,
+          maxHeight:"calc(100vh - 32px)",display:"flex",flexDirection:"column",
+          boxShadow:`0 24px 60px ${C.sh}`,flexShrink:0}}>
+        {/* Header fixo */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          padding:"16px 20px",borderBottom:`1px solid ${C.brd}`,background:C.card2,
+          borderRadius:"18px 18px 0 0",flexShrink:0}}>
           <p style={{color:C.tx,fontWeight:800,fontSize:15,margin:0}}>{title}</p>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.txM,cursor:"pointer",fontSize:20}}>✕</button>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.txM,cursor:"pointer",fontSize:20,lineHeight:1}}>✕</button>
         </div>
-        <div style={{padding:20}}>{children}</div>
+        {/* Corpo com scroll próprio */}
+        <div style={{padding:20,overflowY:"auto",flex:1}}>{children}</div>
       </div>
     </div>
   );
