@@ -3316,7 +3316,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
               background:p.abc?(p.abc==="A"?T.grB:p.abc==="B"?T.bL:T.sur2):T.sur2 }}>
               {p.abc||"—"}
             </span>
-            {["admin","medico"].includes(usuario?.role) && (
+            {["admin","medico"].includes(usuario?.role ?? window._crmUsuario?.role) && (
               <button onClick={e=>{ e.stopPropagation(); if(window.confirm(`Excluir ${p.nm}?`)) setPats(prev=>prev.filter(x=>x.id!==p.id)); }}
                 style={{ width:24, height:24, borderRadius:6, border:"none", background:T.reB,
                   color:T.re, cursor:"pointer", fontSize:13, display:"inline-flex",
@@ -3416,7 +3416,7 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
                   </div>
                   <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                     {stBadge(e.st)}
-                    {["admin","medico"].includes(usuario?.role) && (
+                    {["admin","medico"].includes(usuario?.role ?? window._crmUsuario?.role) && (
                       <button onClick={ev=>{ ev.stopPropagation(); if(window.confirm(`Excluir exame "${e.tipo}" de ${e.pac}?`)) setExames(p=>p.filter(x=>x.id!==e.id)); }}
                         style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
                           color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
@@ -4266,7 +4266,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
 
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
-function PageConsultas() {
+function PageConsultas({ usuario }) {
   const [consultas, setConsultas] = useState(()=>safeLsGet("crm_consultas_v26"));
   useEffect(()=>{localStorage.setItem("crm_consultas_v26",JSON.stringify(consultas));},[consultas]);
   // Escuta teleconsultas adicionadas pela aba Telemedicina em tempo real
@@ -4396,7 +4396,7 @@ function PageConsultas() {
                         → {ns}
                       </button>
                     ))}
-                    {["admin","medico"].includes(usuario?.role) && (
+                    {["admin","medico"].includes(usuario?.role ?? window._crmUsuario?.role) && (
                       <button onClick={()=>{ if(window.confirm(`Excluir consulta de ${c.pac}?`)) setConsultas(p=>p.filter(x=>x.id!==c.id)); }}
                         style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
                           color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
@@ -7863,7 +7863,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
     pacientes:   <PagePacientes usuario={usuario} estoqueState={estoqueState} pats={pats} setPats={setPats} allExames={allExames} setAllExames={setAllExames} setPage={setPage} setPacFiltro={setPacFiltro}/>,
     exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro}/>,
-    consultas:   <PageConsultas />,
+    consultas:   <PageConsultas usuario={usuario} />,
     agenda:      <PageAgenda usuario={usuario}/>,
     financas:    <PageFinancas usuario={usuario}/>,
     estoque:     <PageEstoque usuario={usuario} estoqueState={estoqueState}/>,
@@ -8037,7 +8037,7 @@ function AppInner(){
     };
   },[session]);
   if(!session) return <Login onLogin={setSession} users={users}/>;
-  return <CRM usuario={session} onLogout={()=>{ clearSessionTimer(); setSession(null); }} users={users} setUsers={setUsers}/>;
+  return <CRM usuario={session} onLogout={()=>{ clearSessionTimer(); window._crmUsuario = null; setSession(null); }} users={users} setUsers={setUsers}/>;
 }
 
 
