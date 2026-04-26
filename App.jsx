@@ -56,6 +56,20 @@ function GlobalStyles() {
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: #D4B896; border-radius: 99px; }
       ::-webkit-scrollbar-thumb:hover { background: #B8967A; }
+      /* Background sutil com imagem da Dra. Ilza */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: url('https://static.wixstatic.com/media/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg/v1/fill/w_1200,h_1200,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg');
+        background-size: cover;
+        background-position: center top;
+        opacity: 0.06;
+        pointer-events: none;
+        z-index: 0;
+      }
+      #root { position: relative; z-index: 1; }
+
       @keyframes fadeUp {
         from { opacity: 0; transform: translateY(12px); }
         to   { opacity: 1; transform: translateY(0); }
@@ -6963,14 +6977,8 @@ function CRM({usuario,onLogout,users,setUsers}){
       )}
 
       <div style={{display:"flex",height:"100vh",
-        fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden",
-        position:"relative",
-        backgroundImage:"url('https://static.wixstatic.com/media/1f0134_1e5f1dc566c64df888ce425e028eb99c~mv2.jpg/v1/fill/w_1200,h_800,al_c,q_80,enc_avif,quality_auto/1f0134_1e5f1dc566c64df888ce425e028eb99c~mv2.jpg')",
-        backgroundSize:"cover",backgroundPosition:"center",backgroundAttachment:"fixed"}}>
-        <div style={{position:"fixed",inset:0,background:"linear-gradient(135deg,rgba(242,233,220,.90) 0%,rgba(200,170,130,.78) 40%,rgba(26,47,100,.55) 100%)",zIndex:0,pointerEvents:"none"}}/>
+        fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden"}}>
 
-        {/* Sidebar + Main — acima do overlay */}
-        <div style={{position:"relative",zIndex:1,display:"flex",flex:1,overflow:"hidden"}}>
         {/* Sidebar v26 */}
         <Sidebar
           page={page}
@@ -6988,7 +6996,6 @@ function CRM({usuario,onLogout,users,setUsers}){
             {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
           </div>
         </div>
-        </div>{/* /zIndex wrapper */}
       </div>
     </>
   );
