@@ -1814,7 +1814,18 @@ function MemedModal({paciente,onClose,onSalvar,token}){
                   (rxGerada.digits?"\nCódigo de retirada: "+rxGerada.digits:"")+
                   "\n\nDúvidas: (13) 97802-8137\nDra. Ilza Ezequiel | Gastroenterologia"
                 );
-                window.open("mailto:"+dest+"?subject="+sub+"&body="+body,"_blank");
+                // Envia receita por email via EmailJS
+                EJS.send(EJS.TEMPLATES.consulta, {
+                  to_email:    dest || EMAIL_DRA,
+                  to_email_cc: EMAIL_DRA,
+                  paciente:    paciente.nm,
+                  data: new Date().toLocaleDateString("pt-BR"),
+                  horario: "—", modalidade: "Receita Digital",
+                  procedimento: "Receita: " + (rxGerada?.medicamento||""),
+                  observacoes: rxGerada?.link || "",
+                  link_tele: rxGerada?.digits ? "Código: "+rxGerada.digits : "—",
+                  clinica: "Dra. Ilza Ezequiel | Gastroenterologia",
+                });
               }}>📧 E-mail{!paciente.email&&<span style={{fontSize:9,opacity:.6,marginLeft:3}}>(sem e-mail)</span>}</Btn>
 
               <Btn v="g" onClick={()=>{setRxGerada(null);setStatus("pronto");try{window.MedJS.show();}catch(e){}}}>+ Nova</Btn>
@@ -2576,7 +2587,97 @@ function gerarLinkTelemedicina(pacienteId){
 }
 
 const SALA_MEDICA = "https://meet.jit.si/DrIlzaEzequiel-Consultorio";
-const EMAIL_DRA   = "ilzaeneta@gmail.com";  // email para TODAS as notificações
+const EMAIL_DRA = "ilzaeneta@gmail.com";
+
+// ════════════════════════════════════════════════════════
+// EMAILJS — envio automático sem backend
+// Configure em: https://www.emailjs.com/
+// ════════════════════════════════════════════════════════
+const EJS = {
+  SERVICE_ID:  "service_drailza",   // ← substitua após criar conta
+  PUBLIC_KEY:  "YOUR_PUBLIC_KEY",   // ← substitua após criar conta
+  TEMPLATES: {
+    consulta:      "template_consulta",
+    exame:         "template_exame",
+    teleconsulta:  "template_tele",
+    cancelamento:  "template_cancel",
+  },
+  _loaded: false,
+
+  async init() {
+    if(this._loaded) return true;
+    return new Promise(resolve => {
+      if(window.emailjs) { this._loaded=true; return resolve(true); }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
+      s.onload = () => {
+        window.emailjs.init({ publicKey: this.PUBLIC_KEY });
+        this._loaded = true;
+        resolve(true);
+      };
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    });
+  },
+
+  async send(templateId, params) {
+    try {
+      const ok = await this.init();
+      if(!ok || !window.emailjs) throw new Error("EmailJS não carregou");
+      await window.emailjs.send(this.SERVICE_ID, templateId, params);
+      console.log("[Email] ✅ Enviado:", templateId);
+      return true;
+    } catch(e) {
+      console.warn("[Email] ❌ Falha:", e.message);
+      return false;
+    }
+  },
+
+  // ── Consulta agendada ─────────────────────────────────
+  async confirmarConsulta({ pac, email_pac, dt, hr, tipo, proc, obs, link }) {
+    const dtFmt = (dt||"").split("-").reverse().join("/");
+    return this.send(this.TEMPLATES.consulta, {
+      to_email:    EMAIL_DRA,
+      to_email_cc: email_pac || "",
+      paciente:    pac,
+      data:        dtFmt,
+      horario:     hr,
+      modalidade:  tipo,
+      procedimento: proc,
+      observacoes: obs || "—",
+      link_tele:   link || "—",
+      clinica:     "CRM Dra. Ilza Ezequiel",
+      reply_to:    EMAIL_DRA,
+    });
+  },
+
+  // ── Exame solicitado ──────────────────────────────────
+  async confirmarExame({ pac, tipo, dt, st }) {
+    const dtFmt = (dt||"").split("-").reverse().join("/");
+    return this.send(this.TEMPLATES.exame, {
+      to_email:    EMAIL_DRA,
+      paciente:    pac,
+      exame:       tipo,
+      data:        dtFmt || "A definir",
+      status:      st || "Agendado",
+      clinica:     "CRM Dra. Ilza Ezequiel",
+    });
+  },
+
+  // ── Teleconsulta agendada ─────────────────────────────
+  async confirmarTeleconsulta({ pac, dt, hr, motivo, link }) {
+    const dtFmt = (dt||"").split("-").reverse().join("/");
+    return this.send(this.TEMPLATES.teleconsulta, {
+      to_email:   EMAIL_DRA,
+      paciente:   pac,
+      data:       dtFmt,
+      horario:    hr,
+      motivo:     motivo,
+      link_sala:  link,
+      clinica:    "CRM Dra. Ilza Ezequiel",
+    });
+  },
+};
 
 function ModalTelemedicina({paciente, onClose}){
   const link = gerarLinkTelemedicina(paciente.id);
@@ -2605,9 +2706,16 @@ function ModalTelemedicina({paciente, onClose}){
       + "Acesse pelo link abaixo no dia e horário agendado:\n" + link + "\n\n"
       + "Dicas:\n- Use computador ou celular com câmera e microfone\n- Prefira local tranquilo e bem iluminado\n- Não é necessário instalar nenhum aplicativo\n\n"
       + "Dúvidas: (13) 97802-8137\nEquipe Dra. Ilza Ezequiel | Gastroenterologia";
-    const dest = paciente.email || "";
-    const cc   = EMAIL_DRA;
-    window.open("mailto:" + dest + "?cc=" + cc + "&subject=" + sub + "&body=" + encodeURIComponent(body));
+    // Envia email ao paciente via EmailJS
+    EJS.send(EJS.TEMPLATES.consulta, {
+      to_email:    paciente.email || EMAIL_DRA,
+      to_email_cc: EMAIL_DRA,
+      paciente:    paciente.nm,
+      data:        "—", horario:"—", modalidade:"—",
+      procedimento: "Teleconsulta",
+      observacoes: "—", link_tele: link,
+      clinica: "CRM Dra. Ilza Ezequiel",
+    });
   };
 
   return (
@@ -4128,29 +4236,11 @@ function PopupNovaConsulta({ onClose, onSave }) {
           if(!form.pac.trim()||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
           const nova = {...form, id:"c"+Date.now(), mod: form.tipo};
           onSave(nova);
-          // Envia email de confirmação para a Dra e paciente
-          const dtFmt = nova.dt.split("-").reverse().join("/");
-          const sub = encodeURIComponent(`✅ Consulta confirmada — ${nova.pac} · ${dtFmt} às ${nova.hr}`);
-          const body = encodeURIComponent(
-            `Consulta agendada com sucesso!
-
-Paciente: ${nova.pac}
-Data: ${dtFmt}
-Horário: ${nova.hr}
-Modalidade: ${nova.tipo}
-Procedimento: ${nova.proc}
-Status: ${nova.st}
-
-` +
-            (nova.tipo==="Teleconsulta"
-              ? `Link da teleconsulta:
-https://meet.jit.si/DrIlzaEzequiel-${nova.pac.replace(/\s+/g,"-").toLowerCase()}-${nova.dt}
-
-`
-              : "") +
-            `CRM Dra. Ilza Ezequiel`
-          );
-          window.open(`mailto:${EMAIL_DRA}?subject=${sub}&body=${body}`, "_blank");
+          // Email automático via EmailJS
+          const link_c = nova.tipo==="Teleconsulta"
+            ? `https://meet.jit.si/DrIlzaEzequiel-${nova.pac.replace(/\s+/g,"-").toLowerCase()}-${nova.dt}`
+            : "";
+          EJS.confirmarConsulta({...nova, link:link_c});
           onClose();
         }} icon="cal">Confirmar agendamento</Btn>
       </div>
@@ -6811,23 +6901,8 @@ function Agendamento() {
         window.dispatchEvent(new CustomEvent("crm_consulta_nova", {detail: nova}));
       } catch(e) { console.warn("Erro ao salvar teleconsulta:", e); }
 
-      // Email de confirmação para a Dra
-      const dtFmt = data.split("-").reverse().join("/");
-      const sub = encodeURIComponent(`📹 Teleconsulta confirmada — ${nome} · ${dtFmt} às ${horario}`);
-      const body = encodeURIComponent(
-        `Teleconsulta agendada!
-
-Paciente: ${nome}
-Data: ${dtFmt}
-Horário: ${horario}
-Motivo: ${motivo}
-
-Link:
-${linkSala}
-
-CRM Dra. Ilza Ezequiel`
-      );
-      window.open(`mailto:${EMAIL_DRA}?subject=${sub}&body=${body}`, "_blank");
+      // Email automático de teleconsulta via EmailJS
+      EJS.confirmarTeleconsulta({ pac:nome, dt:data, hr:horario, motivo, link:linkSala });
 
       setEnviando(false);
       setConfirmado(true);
