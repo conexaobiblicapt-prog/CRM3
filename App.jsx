@@ -973,26 +973,42 @@ function Modal({title,onClose,children,width=600}){
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   },[]);
+
+  // Overlay cobre TODA a tela (inset:0) — sidebar fica atrás
+  // O conteúdo é centralizado dentro da área visível descontando a sidebar
   return(
     <div onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}}
-      style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",
-        background:"rgba(13,33,55,.65)",backdropFilter:"blur(4px)",zIndex:2000,
-        display:"flex",alignItems:"center",justifyContent:"center",
-        padding:"16px 16px",overflowY:"auto"}}>
+      style={{
+        position:"fixed", inset:0, zIndex:2000,
+        background:"rgba(13,33,55,.65)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        padding:"16px",
+        // Empurra centro do modal para considerar a sidebar
+        paddingLeft:"calc(var(--sidebar-w,0px) + 16px)",
+        overflowY:"auto",
+      }}>
       <div onMouseDown={e=>e.stopPropagation()}
-        style={{background:C.card,borderRadius:18,width:"100%",
-          maxWidth:`min(${width}px, calc(100vw - 32px))`,
-          maxHeight:"calc(100vh - 32px)",display:"flex",flexDirection:"column",
-          boxShadow:`0 24px 60px ${C.sh}`,flexShrink:0}}>
+        style={{
+          background:C.card, borderRadius:18,
+          width:"100%",
+          // Nunca ultrapassa a área visível disponível (descontando sidebar + padding)
+          maxWidth:`min(${width}px, calc(100vw - var(--sidebar-w,0px) - 32px))`,
+          maxHeight:"calc(100vh - 32px)",
+          display:"flex", flexDirection:"column",
+          boxShadow:`0 24px 60px ${C.sh}`,
+          flexShrink:0,
+        }}>
         {/* Header fixo */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
           padding:"16px 20px",borderBottom:`1px solid ${C.brd}`,background:C.card2,
           borderRadius:"18px 18px 0 0",flexShrink:0}}>
           <p style={{color:C.tx,fontWeight:800,fontSize:15,margin:0}}>{title}</p>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.txM,cursor:"pointer",fontSize:20,lineHeight:1}}>✕</button>
+          <button onClick={onClose}
+            style={{background:"none",border:"none",color:C.txM,cursor:"pointer",
+              fontSize:20,lineHeight:1,flexShrink:0}}>✕</button>
         </div>
         {/* Corpo com scroll próprio */}
-        <div style={{padding:20,overflowY:"auto",flex:1}}>{children}</div>
+        <div style={{padding:20,overflowY:"auto",flex:1,minWidth:0}}>{children}</div>
       </div>
     </div>
   );
@@ -1001,7 +1017,7 @@ function Modal({title,onClose,children,width=600}){
 /* Popup alerta de estoque crítico */
 function ConfirmPopup({title,msg,onYes,onNo,yesLabel="Sim, confirmar",noLabel="Cancelar",danger=false}){
   return(
-    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:400,padding:28,boxShadow:"0 24px 60px rgba(0,0,0,.3)",textAlign:"center"}}>
         <div style={{width:52,height:52,borderRadius:"50%",background:danger?"rgba(192,57,43,.1)":"rgba(26,95,168,.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 14px"}}>
           {danger?"⚠️":"❓"}
@@ -1718,7 +1734,7 @@ function MemedModal({paciente,onClose,onSalvar,token}){
   }
 
   return(
-    <div style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.65)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+    <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.65)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
       <div style={{background:C.card,borderRadius:18,width:"100%",maxWidth:900,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
 
         {/* Header */}
@@ -2144,7 +2160,7 @@ function NotaFiscalModal({paciente,total,pagamentos,procs,onClose,onEmitida}){
     <Modal title={`🧾 Nota Fiscal — ${paciente.nm}`} onClose={onClose} width={620}>
       {/* Popup: NF foi enviada ao paciente? */}
       {nfEnvioPopup&&(
-        <div style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:420,padding:30,boxShadow:"0 24px 60px rgba(0,0,0,.3)",textAlign:"center",border:"2px solid #003399"}}>
             <div style={{width:60,height:60,borderRadius:"50%",background:"#e8f0ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🧾</div>
             <p style={{color:"#003399",fontWeight:900,fontSize:17,margin:"0 0 8px",fontFamily:"Georgia,serif"}}>Nota Fiscal Emitida!</p>
@@ -3795,7 +3811,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
 
       {/* POPUP PRIORIDADE — falar com Dra */}
       {showPrioridade&&(
-        <div style={{position:"fixed",top:0,right:0,bottom:0,left:"var(--sidebar-w,0px)",background:"rgba(13,33,55,.7)",backdropFilter:"blur(6px)",zIndex:5000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(13,33,55,.7)",backdropFilter:"blur(6px)",zIndex:5000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"#fff",borderRadius:20,maxWidth:480,width:"100%",overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.4)"}}>
             <div style={{background:"linear-gradient(135deg,#c0392b,#e74c3c)",padding:"20px 24px",display:"flex",gap:14,alignItems:"center"}}>
               <span style={{fontSize:32}}>🚨</span>
