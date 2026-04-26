@@ -7254,7 +7254,24 @@ function CRM({usuario,onLogout,users,setUsers}){
           <Topbar page={page} usuario={usuario} />
           <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0}}>
             <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:"min-content"}}>
-              {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
+              {usuario.role==="recepcao" && RECEPCAO_BLOCKED.includes(page) ? (
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                  flex:1,padding:40,gap:16,minHeight:400}}>
+                  <div style={{fontSize:52}}>🔒</div>
+                  <div style={{fontSize:18,fontWeight:700,color:T.tx}}>Acesso restrito</div>
+                  <div style={{fontSize:13,color:T.txM,textAlign:"center",maxWidth:360}}>
+                    Seu perfil de Recepção não tem permissão para acessar esta área.
+                  </div>
+                  <button onClick={()=>setPage("home")}
+                    style={{marginTop:8,background:T.b,color:"#fff",border:"none",
+                      borderRadius:10,padding:"10px 24px",fontWeight:700,
+                      fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                    Voltar ao Dashboard
+                  </button>
+                </div>
+              ) : (
+                pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>
+              )}
             </div>
           </div>
         </div>
