@@ -980,7 +980,8 @@ function Modal({title,onClose,children,width=600}){
         display:"flex",alignItems:"center",justifyContent:"center",
         padding:"16px 16px",overflowY:"auto"}}>
       <div onMouseDown={e=>e.stopPropagation()}
-        style={{background:C.card,borderRadius:18,width:"100%",maxWidth:width,
+        style={{background:C.card,borderRadius:18,width:"100%",
+          maxWidth:`min(${width}px, calc(100vw - 32px))`,
           maxHeight:"calc(100vh - 32px)",display:"flex",flexDirection:"column",
           boxShadow:`0 24px 60px ${C.sh}`,flexShrink:0}}>
         {/* Header fixo */}
@@ -2575,6 +2576,7 @@ function gerarLinkTelemedicina(pacienteId){
 }
 
 const SALA_MEDICA = "https://meet.jit.si/DrIlzaEzequiel-Consultorio";
+const EMAIL_DRA   = "ilzaeneta@gmail.com";  // email para TODAS as notificações
 
 function ModalTelemedicina({paciente, onClose}){
   const link = gerarLinkTelemedicina(paciente.id);
@@ -2603,7 +2605,9 @@ function ModalTelemedicina({paciente, onClose}){
       + "Acesse pelo link abaixo no dia e horário agendado:\n" + link + "\n\n"
       + "Dicas:\n- Use computador ou celular com câmera e microfone\n- Prefira local tranquilo e bem iluminado\n- Não é necessário instalar nenhum aplicativo\n\n"
       + "Dúvidas: (13) 97802-8137\nEquipe Dra. Ilza Ezequiel | Gastroenterologia";
-    window.open("mailto:" + (paciente.email||"") + "?subject=" + sub + "&body=" + encodeURIComponent(body));
+    const dest = paciente.email || "";
+    const cc   = EMAIL_DRA;
+    window.open("mailto:" + dest + "?cc=" + cc + "&subject=" + sub + "&body=" + encodeURIComponent(body));
   };
 
   return (
@@ -2688,8 +2692,18 @@ function ModalTelemedicina({paciente, onClose}){
    PÁGINA PRONTUÁRIO ELETRÔNICO (ex-Pacientes)
 ════════════════════════════════════════════════════════════════ */
 
-function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro }) {
+function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, setPats }) {
   const [tab, setTab] = useState("info");
+  // AutoSave: salva 2s após última edição
+  const autoTimer = useRef(null);
+  function scheduleAutoSave(updated) {
+    if(autoTimer.current) clearTimeout(autoTimer.current);
+    autoTimer.current = setTimeout(() => {
+      if(setPats) setPats(prev => prev.map(p => p.id===updated.id ? updated : p));
+      const badge = document.getElementById("autosave-badge");
+      if(badge) { badge.style.opacity=1; setTimeout(()=>{ badge.style.opacity=0; },2000); }
+    }, 2000);
+  }
   const [showAddExame, setShowAddExame] = useState(false);
   const [prontuarios, setProntuarios] = useState(mockProntuarios[pac.id] || []);
   const [showAddPront, setShowAddPront] = useState(false);
@@ -2730,7 +2744,15 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
   };
 
   return (
-    <Modal title="Ficha do Paciente" onClose={onClose} width={620}>
+    <Modal title={
+        <span style={{display:"flex",alignItems:"center",gap:10}}>
+          Ficha do Paciente
+          <span id="autosave-badge" style={{
+            fontSize:10,fontWeight:600,color:"#2D7A4F",background:"#EDF7F1",
+            padding:"2px 8px",borderRadius:99,opacity:0,transition:"opacity .3s"
+          }}>✓ Salvo automaticamente</span>
+        </span>
+      } onClose={onClose} width={620}>
       {/* header SEM avatar */}
       <div style={{ marginBottom:20, padding:"16px 20px",
         background:T.sur2, borderRadius:14, border:`1px solid ${T.br}` }}>
@@ -4104,7 +4126,31 @@ function PopupNovaConsulta({ onClose, onSave }) {
         <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={()=>{
           if(!form.pac.trim()||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
-          onSave({...form, id:"c"+Date.now()});
+          const nova = {...form, id:"c"+Date.now(), mod: form.tipo};
+          onSave(nova);
+          // Envia email de confirmação para a Dra e paciente
+          const dtFmt = nova.dt.split("-").reverse().join("/");
+          const sub = encodeURIComponent(`✅ Consulta confirmada — ${nova.pac} · ${dtFmt} às ${nova.hr}`);
+          const body = encodeURIComponent(
+            `Consulta agendada com sucesso!
+
+Paciente: ${nova.pac}
+Data: ${dtFmt}
+Horário: ${nova.hr}
+Modalidade: ${nova.tipo}
+Procedimento: ${nova.proc}
+Status: ${nova.st}
+
+` +
+            (nova.tipo==="Teleconsulta"
+              ? `Link da teleconsulta:
+https://meet.jit.si/DrIlzaEzequiel-${nova.pac.replace(/\s+/g,"-").toLowerCase()}-${nova.dt}
+
+`
+              : "") +
+            `CRM Dra. Ilza Ezequiel`
+          );
+          window.open(`mailto:${EMAIL_DRA}?subject=${sub}&body=${body}`, "_blank");
           onClose();
         }} icon="cal">Confirmar agendamento</Btn>
       </div>
@@ -4117,6 +4163,17 @@ function PopupNovaConsulta({ onClose, onSave }) {
 function PageConsultas() {
   const [consultas, setConsultas] = useState(()=>safeLsGet("crm_consultas_v26"));
   useEffect(()=>{localStorage.setItem("crm_consultas_v26",JSON.stringify(consultas));},[consultas]);
+  // Escuta teleconsultas adicionadas pela aba Telemedicina em tempo real
+  useEffect(()=>{
+    const handler = e => {
+      setConsultas(prev => {
+        if(prev.find(c=>c.id===e.detail.id)) return prev;
+        return [...prev, e.detail].sort((a,b)=>a.dt>b.dt?1:-1);
+      });
+    };
+    window.addEventListener("crm_consulta_nova", handler);
+    return () => window.removeEventListener("crm_consulta_nova", handler);
+  }, []);
   const [showNew, setShowNew] = useState(false);
   const [filtro, setFiltro] = useState("Todos");
   const [q, setQ] = useState("");
@@ -6541,6 +6598,17 @@ function Videoconsulta({ paciente, onEncerrar }) {
     return () => clearInterval(t);
   }, []);
 
+  // Impede fechar/navegar durante teleconsulta ativa
+  useEffect(() => {
+    const handler = e => {
+      e.preventDefault();
+      e.returnValue = "Há uma teleconsulta em andamento. Tem certeza que deseja sair?";
+      return e.returnValue;
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
   const fmt = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   const hoje = new Date().toLocaleDateString("pt-BR");
   // useRef garante que o nome da sala nao muda entre re-renders (evita piscar)
@@ -6727,7 +6795,43 @@ function Agendamento() {
   const confirmar = () => {
     if (!nome || !horario) { alert("Preencha o nome e selecione o horario."); return; }
     setEnviando(true);
-    setTimeout(() => { setEnviando(false); setConfirmado(true); }, 900);
+    setTimeout(() => {
+      // Salva em consultas (crm_consultas_v26) para aparecer na lista
+      try {
+        const key = "crm_consultas_v26";
+        const prev = JSON.parse(localStorage.getItem(key)||"[]");
+        const nova = {
+          id: "c"+Date.now(), pac: nome, dt: data, hr: horario,
+          tipo: "Teleconsulta", mod: "Teleconsulta",
+          proc: motivo, st: "Confirmado",
+          obs: "Link: " + linkSala
+        };
+        localStorage.setItem(key, JSON.stringify([...prev, nova].sort((a,b)=>a.dt>b.dt?1:-1)));
+        // Dispara evento para sincronizar state em tempo real
+        window.dispatchEvent(new CustomEvent("crm_consulta_nova", {detail: nova}));
+      } catch(e) { console.warn("Erro ao salvar teleconsulta:", e); }
+
+      // Email de confirmação para a Dra
+      const dtFmt = data.split("-").reverse().join("/");
+      const sub = encodeURIComponent(`📹 Teleconsulta confirmada — ${nome} · ${dtFmt} às ${horario}`);
+      const body = encodeURIComponent(
+        `Teleconsulta agendada!
+
+Paciente: ${nome}
+Data: ${dtFmt}
+Horário: ${horario}
+Motivo: ${motivo}
+
+Link:
+${linkSala}
+
+CRM Dra. Ilza Ezequiel`
+      );
+      window.open(`mailto:${EMAIL_DRA}?subject=${sub}&body=${body}`, "_blank");
+
+      setEnviando(false);
+      setConfirmado(true);
+    }, 900);
   };
 
   if (confirmado) return (
