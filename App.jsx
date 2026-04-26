@@ -431,7 +431,7 @@ const IA_KNOWLEDGE_BASE = [
   {
     id:"kb3", tipo:"info", titulo:"Formas de atendimento e modalidades",
     gatilho:"presencial|telemedicina|online|remoto|como funciona|modalidade|atende como",
-    resposta:"A Dra. Ilza atende de forma *presencial* (sextas no IMES Santos: 8h30 / 10h / 11h30 / 13h) ou por *telemedicina* (seg 14h30/16h · ter 14h30 · qua 14h30). A consulta tem duração de 1h30, tempo para ouvir, entender suas queixas e histórico completo — ela não foca só nos sintomas, mas em toda a sua história. 🩺"
+    resposta:"A Dra. Ilza atende de forma *presencial* (sextas no: 8h30 / 10h / 11h30 / 13h) ou por *telemedicina* (seg 14h30/16h · ter 14h30 · qua 14h30). A consulta tem duração de 1h30, tempo para ouvir, entender suas queixas e histórico completo — ela não foca só nos sintomas, mas em toda a sua história. 🩺"
   },
   {
     id:"kb4", tipo:"script", titulo:"Plano de Acompanhamento 360°",
@@ -2882,7 +2882,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
 
       {/* Tabela — SEM coluna de avatar */}
       <div style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:16, overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr",
+        <div style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr .4fr",
           padding:"12px 22px", background:T.sur2, borderBottom:`1px solid ${T.br}`,
           fontSize:11, fontWeight:700, color:T.txM, textTransform:"uppercase",
           letterSpacing:".08em", gap:8 }}>
@@ -2897,7 +2897,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
         )}
         {filtered.map((p,i) => (
           <div key={p.id} onClick={()=>setSelPac(p)}
-            style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr",
+            style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr .4fr",
               padding:"13px 22px", gap:8, alignItems:"center",
               borderBottom:i<filtered.length-1?`1px solid ${T.br}`:"none",
               cursor:"pointer", transition:"background .12s, border-left .12s",
@@ -2919,6 +2919,13 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
               background:p.abc?(p.abc==="A"?T.grB:p.abc==="B"?T.bL:T.sur2):T.sur2 }}>
               {p.abc||"—"}
             </span>
+            {["admin","medico"].includes(usuario?.role) && (
+              <button onClick={e=>{ e.stopPropagation(); if(window.confirm(`Excluir ${p.nm}?`)) setPats(prev=>prev.filter(x=>x.id!==p.id)); }}
+                style={{ width:24, height:24, borderRadius:6, border:"none", background:T.reB,
+                  color:T.re, cursor:"pointer", fontSize:13, display:"inline-flex",
+                  alignItems:"center", justifyContent:"center", flexShrink:0 }}
+                title="Excluir paciente">✕</button>
+            )}
           </div>
         ))}
       </div>
@@ -6279,27 +6286,28 @@ const SALA_MSGS_INIT = {};
 
 function PageSalaVirtual({ pats }) {
   // ── Estado ──
-  const [portalPacs, setPortalPacs] = useState({});   // salas_index do Firebase
-  const [msgs, setMsgs]             = useState([]);   // mensagens do paciente selecionado
+  const [portalPacs, setPortalPacs] = useState({});
+  const [msgs, setMsgs]             = useState([]);
   const [selPac, setSelPac]         = useState(null);
   const [texto, setTexto]           = useState("");
   const [busca, setBusca]           = useState("");
+  const [view, setView]             = useState("sala"); // "sala" | "chat"
+  const [confirmEnc, setConfirmEnc] = useState(false);
+  const [msgEnc, setMsgEnc]         = useState("Obrigada pela confiança! Atendimento encerrado. Cuide-se! 🌿");
   const bottomRef = useRef();
   const inputRef  = useRef();
 
-  // ── Escuta /salas_index em tempo real (fila do Portal) ──
+  // ── Escuta /salas_index em tempo real ──
   useEffect(()=>{
     if(!FB_CONFIGURED || !rtdb) return;
     const r = ref(rtdb, "salas_index");
-    const unsub = onValue(r, snap => {
-      setPortalPacs(snap.val() || {});
-    });
+    const unsub = onValue(r, snap => { setPortalPacs(snap.val() || {}); });
     return () => off(r);
   }, []);
 
   // ── Escuta mensagens do paciente selecionado ──
   useEffect(()=>{
-    if(!selPac || !FB_CONFIGURED || !rtdb) return;
+    if(!selPac || !FB_CONFIGURED || !rtdb) { setMsgs([]); return; }
     const r = ref(rtdb, `salas/${selPac.id}/msgs`);
     const unsub = onValue(r, snap => {
       const val = snap.val();
@@ -6307,7 +6315,6 @@ function PageSalaVirtual({ pats }) {
         ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
         : [];
       setMsgs(lista);
-      // Marca como lidas
       const updates = {};
       lista.forEach(m=>{ if(m.de==="pac"&&!m.lida) updates[`salas/${selPac.id}/msgs/${m.id}/lida`]=true; });
       if(Object.keys(updates).length) update(ref(rtdb), updates);
@@ -6315,24 +6322,45 @@ function PageSalaVirtual({ pats }) {
     return () => off(r);
   }, [selPac]);
 
-  // ── Scroll automático ──
   useEffect(()=>{
     bottomRef.current?.scrollIntoView({ behavior:"smooth" });
-  }, [msgs, selPac]);
+  }, [msgs]);
 
-  // ── Apenas pacientes ativos no Portal ──
+  // ── Pacientes do Portal apenas ──
   const allPacientes = useMemo(() => {
     return Object.entries(portalPacs).map(([id, info]) => ({
       id,
-      nm:      info.nm    || id,
-      plano:   info.plano || "Portal",
-      premium: !!info.premium,
-      status:  info.status || "aguardando",
+      nm:        info.nm    || id,
+      plano:     info.plano || "Portal",
+      premium:   !!info.premium,
+      iniciais:  info.iniciais || (info.nm||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase(),
+      status:    info.status || "aguardando",
       ultimaTxt: info.ultimaTxt || "",
       ultimaTs:  info.ultimaTs  || "",
-      _portal: true,
+      tsNum:     info.tsNum || 0,
     }));
   }, [portalPacs]);
+
+  const aguardando = allPacientes.filter(p => p.status === "aguardando");
+  const atendendo  = allPacientes.filter(p => p.status === "atendendo");
+  const filtrados  = aguardando.filter(p => p.nm.toLowerCase().includes(busca.toLowerCase()));
+
+  function naoLidas(pac) {
+    return msgs.filter(m => m.de === "pac" && !m.lida && selPac?.id === pac.id).length;
+  }
+
+  function atender(pac) {
+    if(FB_CONFIGURED && rtdb)
+      update(ref(rtdb, `salas_index/${pac.id}`), { status: "atendendo" });
+    setSelPac(pac);
+    setView("chat");
+  }
+
+  function voltarSala() {
+    setView("sala");
+    setSelPac(null);
+    setMsgs([]);
+  }
 
   function enviar() {
     const txt = texto.trim();
@@ -6341,11 +6369,8 @@ function PageSalaVirtual({ pats }) {
     push(ref(rtdb, `salas/${selPac.id}/msgs`), {
       txt, de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true
     });
-    set(ref(rtdb, `salas_index/${selPac.id}`), {
-      ...portalPacs[selPac.id],
-      ultimaTxt: "Dra: "+txt,
-      ultimaTs: ts,
-      tsNum: Date.now(),
+    update(ref(rtdb, `salas_index/${selPac.id}`), {
+      ultimaTxt:"← "+txt.substring(0,50), ultimaTs:ts, tsNum:Date.now()
     });
     setTexto("");
     setTimeout(()=>inputRef.current?.focus(), 50);
@@ -6353,190 +6378,269 @@ function PageSalaVirtual({ pats }) {
 
   function onKey(e) { if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }
 
-  const naoLidas = pac => {
-    // Conta msgs do Firebase se disponível, senão 0
-    return 0;
-  };
+  function encerrar() {
+    if(!selPac || !FB_CONFIGURED || !rtdb) return;
+    const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    if(msgEnc.trim()) {
+      push(ref(rtdb, `salas/${selPac.id}/msgs`), {
+        txt:msgEnc.trim(), de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true
+      });
+    }
+    setTimeout(()=>remove(ref(rtdb, `salas_index/${selPac.id}`)), 800);
+    setConfirmEnc(false);
+    voltarSala();
+  }
 
-  const ultimaMsg = pac => {
-    if(pac.ultimaTxt) return { txt: pac.ultimaTxt, ts: pac.ultimaTs };
-    return { txt:"Nenhuma mensagem ainda", ts:"" };
-  };
+  // ────────────────────────────────────
+  // RENDER: visão SALA (fila)
+  // ────────────────────────────────────
+  if(view === "sala") return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
 
-  const filtrados = allPacientes.filter(p=>p.nm.toLowerCase().includes(busca.toLowerCase()));
+      {/* Header */}
+      <div style={{ padding:"20px 24px 14px", borderBottom:`1px solid ${T.br}`,
+        display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, background:T.sur }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:800, color:T.tx }}>Sala Virtual</div>
+          <div style={{ fontSize:11, color:FB_CONFIGURED?T.gr:T.am, fontWeight:600,
+            display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
+            <span style={{ width:6, height:6, borderRadius:"50%",
+              background:FB_CONFIGURED?T.gr:T.am, display:"inline-block" }}/>
+            {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Firebase não configurado"}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          {aguardando.length > 0 && (
+            <span style={{ background:T.re, color:"#fff", borderRadius:99,
+              padding:"3px 12px", fontSize:11, fontWeight:800 }}>
+              {aguardando.length} aguardando
+            </span>
+          )}
+          {atendendo.length > 0 && (
+            <span style={{ background:T.gr, color:"#fff", borderRadius:99,
+              padding:"3px 12px", fontSize:11, fontWeight:800 }}>
+              {atendendo.length} em atendimento
+            </span>
+          )}
+        </div>
+      </div>
 
-  return (
-    <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
+      <div style={{ flex:1, overflowY:"auto", padding:"16px 24px", display:"flex", flexDirection:"column", gap:12 }}>
 
-      {/* Lista de pacientes */}
-      <div style={{ width:300, flexShrink:0, borderRight:`1px solid ${T.br}`,
-        display:"flex", flexDirection:"column", background:T.sur }}>
-        <div style={{ padding:"20px 20px 14px", borderBottom:`1px solid ${T.br}` }}>
-          <div style={{ fontSize:16, fontWeight:800, color:T.tx, marginBottom:12 }}>Sala Virtual</div>
-          <div style={{ position:"relative" }}>
+        {/* Em atendimento */}
+        {atendendo.length > 0 && (
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, color:T.gr, textTransform:"uppercase",
+              letterSpacing:".08em", marginBottom:8 }}>● Em atendimento</div>
+            {atendendo.map(p => (
+              <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px",
+                background:T.sur, border:`1px solid ${T.br}`, borderRadius:12, marginBottom:8 }}>
+                <div style={{ width:38, height:38, borderRadius:50, background:p.premium?T.bL:"#f0f0f0",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontWeight:700, fontSize:13, color:p.premium?T.b:"#888", flexShrink:0 }}>
+                  {p.iniciais}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}
+                    {p.premium && <span style={{ marginLeft:6, fontSize:10, color:T.b, fontWeight:700 }}>★ Premium</span>}
+                  </div>
+                  <div style={{ fontSize:11, color:T.gr }}>● Em atendimento · {p.plano}</div>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={()=>atender(p)}
+                    style={{ padding:"7px 14px", borderRadius:9, border:`1px solid ${T.b}`, background:T.bL,
+                      color:T.b, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    💬 Chat
+                  </button>
+                  <button onClick={()=>{ setSelPac(p); setConfirmEnc(true); }}
+                    style={{ padding:"7px 14px", borderRadius:9, border:`1px solid ${T.re}`, background:T.reB,
+                      color:T.re, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    ✕ Encerrar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Fila de espera */}
+        <div>
+          <div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase",
+            letterSpacing:".08em", marginBottom:8 }}>Aguardando atendimento</div>
+
+          <div style={{ position:"relative", marginBottom:10 }}>
             <div style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)" }}>
               <Ic n="search" sz={14} c={T.txS}/>
             </div>
             <input value={busca} onChange={e=>setBusca(e.target.value)}
-              placeholder="Buscar paciente..."
+              placeholder="Buscar na fila..."
               style={{ ...inp, paddingLeft:34, fontSize:12 }}/>
           </div>
-        </div>
-        <div style={{ flex:1, overflowY:"auto" }}>
-          {filtrados.length===0 && (
-            <div style={{ padding:"40px 20px", textAlign:"center", color:T.txS, fontSize:13 }}>
-              Nenhum paciente encontrado
+
+          {filtrados.length === 0 ? (
+            <div style={{ padding:"52px 20px", textAlign:"center", color:T.txS }}>
+              <div style={{ fontSize:40, marginBottom:12 }}>🚪</div>
+              <div style={{ fontSize:14, fontWeight:600, color:T.txM }}>Sala vazia</div>
+              <div style={{ fontSize:12, marginTop:6 }}>Nenhum paciente aguardando no Portal</div>
             </div>
-          )}
-          {filtrados.map(p => {
-            const { txt, ts } = ultimaMsg(p);
-            const nl = naoLidas(p);
-            const isActive = selPac?.id === p.id;
-            return (
-              <div key={p.id} onClick={()=>setSelPac(p)}
-                style={{ padding:"14px 20px", cursor:"pointer", transition:"background .12s",
-                  background:isActive?T.sur2:"transparent",
-                  borderLeft:isActive?`3px solid ${T.b}`:"3px solid transparent",
-                  borderBottom:`1px solid ${T.br}` }}
-                onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background=T.sur2; }}
-                onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.background="transparent"; }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:T.tx, flex:1, minWidth:0,
-                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.nm}</div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0, marginLeft:8 }}>
-                    {ts&&<span style={{ fontSize:10, color:T.txS }}>{ts}</span>}
-                    {nl>0&&<span style={{ background:T.b, color:"#fff", borderRadius:99,
-                      padding:"1px 6px", fontSize:9, fontWeight:800 }}>{nl}</span>}
+          ) : (
+            filtrados.map((p, i) => (
+              <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px",
+                background:T.sur, border:`1px solid ${T.br}`, borderRadius:12, marginBottom:8 }}>
+                <div style={{ width:28, height:28, borderRadius:50, background:T.bL,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontWeight:700, fontSize:11, color:T.b, flexShrink:0 }}>
+                  {i+1}
+                </div>
+                <div style={{ width:36, height:36, borderRadius:50, background:p.premium?T.bL:"#f0f0f0",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontWeight:700, fontSize:13, color:p.premium?T.b:"#888", flexShrink:0 }}>
+                  {p.iniciais}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}
+                    {p.premium && <span style={{ marginLeft:6, fontSize:10, color:T.b, fontWeight:700 }}>★</span>}
+                  </div>
+                  <div style={{ fontSize:11, color:T.txS }}>
+                    {p.ultimaTxt ? `"${p.ultimaTxt.substring(0,40)}"` : "Aguardando..."} · {p.ultimaTs}
                   </div>
                 </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:11, color:T.txS, flex:1, whiteSpace:"nowrap",
-                    overflow:"hidden", textOverflow:"ellipsis" }}>{txt}</span>
-                </div>
-                <div style={{ fontSize:10, color:T.txS, marginTop:3 }}>{p.plano}</div>
+                <button onClick={()=>atender(p)}
+                  style={{ padding:"8px 16px", borderRadius:9, border:"none",
+                    background:`linear-gradient(135deg,#A8722A,#7A5018)`, color:"#fff",
+                    fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                  Atender →
+                </button>
               </div>
-            );
-          })}
-        </div>
-        <div style={{ padding:"10px 16px", borderTop:`1px solid ${T.br}`,
-          fontSize:10, color:FB_CONFIGURED?T.gr:T.am, fontWeight:600,
-          display:"flex", alignItems:"center", gap:5 }}>
-          <span style={{ width:6, height:6, borderRadius:"50%",
-            background:FB_CONFIGURED?T.gr:T.am, display:"inline-block" }}/>
-          {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Firebase não configurado"}
+            ))
+          )}
         </div>
       </div>
+    </div>
+  );
 
-      {/* Área de chat */}
-      {selPac ? (
-        <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-          {/* Header */}
-          <div style={{ padding:"14px 24px", borderBottom:`1px solid ${T.br}`, background:T.sur,
-            display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
-            <div>
-              <div style={{ fontSize:15, fontWeight:700, color:T.tx }}>{selPac.nm}</div>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:3 }}>
-                <span style={{ display:"flex", alignItems:"center", gap:5, fontSize:11,
-                  fontWeight:600, background:T.grB, color:T.gr, borderRadius:99, padding:"2px 8px 2px 6px" }}>
-                  <span style={{ width:6, height:6, borderRadius:"50%", background:T.gr, display:"inline-block" }}/>
-                  online
-                </span>
-                <span style={{ fontSize:11, color:T.txS }}>{selPac.plano}</span>
-              </div>
-            </div>
-            <button onClick={()=>setSelPac(null)}
-              style={{ background:T.sur2, border:`1px solid ${T.br}`, borderRadius:9,
-                padding:"6px 14px", fontSize:11, fontWeight:600, color:T.txM,
-                cursor:"pointer", fontFamily:"inherit" }}>
-              Fechar
-            </button>
+  // ────────────────────────────────────
+  // RENDER: visão CHAT
+  // ────────────────────────────────────
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden" }}>
+
+      {/* Header chat */}
+      <div style={{ padding:"12px 20px", borderBottom:`1px solid ${T.br}`, background:T.bL,
+        display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+        <button onClick={voltarSala}
+          style={{ width:32, height:32, borderRadius:50, background:T.sur, border:`1px solid ${T.br}`,
+            color:T.b, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          ←
+        </button>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:11, color:T.txM }}>
+            💬 Respondendo como <strong>Equipe Dra. Ilza</strong>
           </div>
-
-          {/* Mensagens */}
-          <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", background:T.bg,
-            display:"flex", flexDirection:"column", gap:10 }}>
-            {msgs.length===0 && (
-              <div style={{ textAlign:"center", padding:"60px 20px", color:T.txS }}>
-                <div style={{ fontSize:40, marginBottom:14 }}>💬</div>
-                <div style={{ fontSize:13, fontWeight:600, color:T.txM }}>Nenhuma mensagem ainda</div>
-                <div style={{ fontSize:11, marginTop:6 }}>Inicie a conversa com {selPac.nm.split(" ")[0]}</div>
-              </div>
-            )}
-            {msgs.map(m => {
-              const isDra = m.de==="dra";
-              return (
-                <div key={m.id} style={{ display:"flex", justifyContent:isDra?"flex-end":"flex-start" }}>
-                  <div style={{ maxWidth:"72%" }}>
-                    {!isDra && (
-                      <div style={{ fontSize:10, color:T.txS, marginBottom:3, paddingLeft:4 }}>
-                        {selPac.nm.split(" ")[0]}
-                      </div>
-                    )}
-                    <div style={{
-                      padding:"10px 14px",
-                      borderRadius:isDra?"16px 16px 4px 16px":"16px 16px 16px 4px",
-                      background:isDra?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur,
-                      color:isDra?"#fff":T.tx, fontSize:13, lineHeight:1.55,
-                      boxShadow:isDra?"0 4px 14px rgba(168,114,42,.28)":"0 1px 4px rgba(44,26,8,.08)",
-                      border:isDra?"none":`1px solid ${T.br}`,
-                    }}>
-                      {m.txt}
-                    </div>
-                    <div style={{ fontSize:10, color:T.txS, marginTop:3,
-                      textAlign:isDra?"right":"left",
-                      paddingLeft:isDra?0:4, paddingRight:isDra?4:0 }}>
-                      {isDra?"Dra. Ilza · ":""}{m.ts}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={bottomRef}/>
-          </div>
-
-          {/* Input */}
-          <div style={{ padding:"14px 24px", background:T.sur, borderTop:`1px solid ${T.br}`,
-            display:"flex", gap:10, alignItems:"flex-end", flexShrink:0 }}>
-            <textarea ref={inputRef} value={texto} onChange={e=>setTexto(e.target.value)}
-              onKeyDown={onKey}
-              placeholder={`Escrever para ${selPac.nm.split(" ")[0]}… (Enter para enviar)`}
-              rows={1}
-              style={{ ...inp, flex:1, resize:"none", lineHeight:1.5,
-                paddingTop:10, paddingBottom:10, maxHeight:100, overflowY:"auto" }}/>
-            <button onClick={enviar} disabled={!texto.trim()}
-              style={{ width:42, height:42, borderRadius:11, border:"none",
-                cursor:texto.trim()?"pointer":"not-allowed",
-                background:texto.trim()?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur2,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                boxShadow:texto.trim()?"0 4px 14px rgba(168,114,42,.35)":"none",
-                transition:"all .15s", flexShrink:0 }}>
-              <Ic n="send" sz={16} c={texto.trim()?"#fff":T.brD}/>
-            </button>
+          <div style={{ fontSize:13, fontWeight:700, color:T.tx }}>
+            {selPac?.premium && "★ "}{selPac?.nm}
           </div>
         </div>
-      ) : (
-        <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center",
-          justifyContent:"center", gap:14, color:T.txS, background:T.bg }}>
-          <div style={{ width:72, height:72, borderRadius:20, background:T.bL,
-            display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <Ic n="sala" sz={32} c={T.b}/>
+        <button onClick={()=>setConfirmEnc(true)}
+          style={{ padding:"6px 14px", borderRadius:20, background:T.reB, border:`1px solid ${T.re}`,
+            color:T.re, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+            display:"flex", alignItems:"center", gap:5 }}>
+          ✕ Encerrar
+        </button>
+      </div>
+
+      {/* Mensagens */}
+      <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", background:T.bg,
+        display:"flex", flexDirection:"column", gap:10 }}>
+        {msgs.length === 0 && (
+          <div style={{ textAlign:"center", padding:"60px 20px", color:T.txS }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>💬</div>
+            <div style={{ fontSize:13, fontWeight:600, color:T.txM }}>Nenhuma mensagem ainda</div>
+            <div style={{ fontSize:11, marginTop:6 }}>Inicie a conversa com {selPac?.nm.split(" ")[0]}</div>
           </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:16, fontWeight:700, color:T.txM, marginBottom:6 }}>Sala Virtual</div>
-            <div style={{ fontSize:13, color:T.txS, maxWidth:260, lineHeight:1.6 }}>
-              Selecione um paciente para abrir a sala de comunicação exclusiva
+        )}
+        {msgs.map(m => {
+          const isDra = m.de === "dra";
+          return (
+            <div key={m.id} style={{ display:"flex", justifyContent:isDra?"flex-end":"flex-start" }}>
+              <div style={{ maxWidth:"72%" }}>
+                {!isDra && (
+                  <div style={{ fontSize:10, color:T.txS, marginBottom:3, paddingLeft:4 }}>
+                    {selPac?.nm.split(" ")[0]}
+                  </div>
+                )}
+                <div style={{
+                  padding:"10px 14px",
+                  borderRadius:isDra?"16px 16px 4px 16px":"16px 16px 16px 4px",
+                  background:isDra?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur,
+                  color:isDra?"#fff":T.tx, fontSize:13, lineHeight:1.55,
+                  boxShadow:isDra?"0 4px 14px rgba(168,114,42,.28)":"0 1px 4px rgba(44,26,8,.08)",
+                  border:isDra?"none":`1px solid ${T.br}`,
+                }}>
+                  {m.txt}
+                </div>
+                <div style={{ fontSize:10, color:T.txS, marginTop:3,
+                  textAlign:isDra?"right":"left", paddingLeft:isDra?0:4, paddingRight:isDra?4:0 }}>
+                  {isDra?"Dra. Ilza · ":""}{m.ts}
+                  {isDra && m.lida && <span style={{ marginLeft:4, color:T.b }}>✓✓</span>}
+                </div>
+              </div>
             </div>
-          </div>
-          <div style={{ background:T.bL, border:`1px solid ${T.b}28`, borderRadius:99,
-            padding:"6px 20px", fontSize:12, fontWeight:600, color:T.b }}>
-            {allPacientes.length > 0 ? `${allPacientes.length} na sala agora` : "Sala vazia"}
+          );
+        })}
+        <div ref={bottomRef}/>
+      </div>
+
+      {/* Input */}
+      <div style={{ padding:"14px 24px", background:T.sur, borderTop:`1px solid ${T.br}`,
+        display:"flex", gap:10, alignItems:"flex-end", flexShrink:0 }}>
+        <textarea ref={inputRef} value={texto} onChange={e=>setTexto(e.target.value)}
+          onKeyDown={onKey}
+          placeholder={`Escrever para ${selPac?.nm.split(" ")[0]}… (Enter para enviar)`}
+          rows={1}
+          style={{ ...inp, flex:1, resize:"none", lineHeight:1.5,
+            paddingTop:10, paddingBottom:10, maxHeight:100, overflowY:"auto" }}/>
+        <button onClick={enviar} disabled={!texto.trim()}
+          style={{ width:42, height:42, borderRadius:11, border:"none",
+            cursor:texto.trim()?"pointer":"not-allowed",
+            background:texto.trim()?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur2,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:texto.trim()?"0 4px 14px rgba(168,114,42,.35)":"none",
+            transition:"all .15s", flexShrink:0 }}>
+          <Ic n="send" sz={16} c={texto.trim()?"#fff":T.brD}/>
+        </button>
+      </div>
+
+      {/* Modal encerrar */}
+      {confirmEnc && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:300,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <div style={{ background:"#fff", borderRadius:20, padding:"24px 20px", maxWidth:360, width:"100%" }}>
+            <div style={{ fontSize:32, textAlign:"center", marginBottom:12 }}>✅</div>
+            <div style={{ fontSize:16, fontWeight:700, color:T.tx, textAlign:"center", marginBottom:14 }}>
+              Encerrar atendimento?
+            </div>
+            <div style={{ background:T.bL, border:`1px solid ${T.b}30`, borderRadius:12, padding:"12px 14px", marginBottom:16 }}>
+              <textarea value={msgEnc} onChange={e=>setMsgEnc(e.target.value)} rows={3}
+                style={{ width:"100%", border:"none", background:"transparent",
+                  fontFamily:"inherit", fontSize:12, color:T.tx, resize:"none", outline:"none" }}/>
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>setConfirmEnc(false)}
+                style={{ flex:1, padding:12, borderRadius:11, border:`1.5px solid ${T.br}`,
+                  background:"#fff", color:T.txM, fontSize:13, fontWeight:600,
+                  fontFamily:"inherit", cursor:"pointer" }}>Cancelar</button>
+              <button onClick={encerrar}
+                style={{ flex:1, padding:12, borderRadius:11, border:"none",
+                  background:T.gr, color:"#fff", fontSize:13, fontWeight:700,
+                  fontFamily:"inherit", cursor:"pointer" }}>Encerrar</button>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) {
@@ -6679,7 +6783,7 @@ function Topbar({ page, usuario }) {
       padding:"0 28px", flexShrink:0 }}>
       <div>
         <div style={{ fontSize:17, fontWeight:700, color:T.tx, letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
-        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia · IMES Santos</div>
+        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia</div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button style={{ position:"relative", background:T.sur2, border:`1.5px solid ${T.br}`,
