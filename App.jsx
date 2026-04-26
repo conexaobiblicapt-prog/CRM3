@@ -4337,6 +4337,34 @@ const mockLancamentos_data = (() => {
 /* ════════════════════════════════════════════════════════════════
    Badge — componente de status (v32: definição faltante corrigida)
 ════════════════════════════════════════════════════════════════ */
+// ── stBadge: badge de status reutilizável em todo o CRM ──
+function stBadge(st) {
+  const map = {
+    "Ativo":        { c: T.gr,  b: T.grB,  br: T.grBr  },
+    "Inativo":      { c: T.re,  b: T.reB,  br: T.reBr  },
+    "Aguardando":   { c: T.am,  b: T.amB,  br: T.amBr  },
+    "Alta":         { c: T.b,   b: T.bL,   br: T.b+"40" },
+    "Pendente":     { c: T.am,  b: T.amB,  br: T.amBr  },
+    "Realizado":    { c: T.gr,  b: T.grB,  br: T.grBr  },
+    "Cancelado":    { c: T.re,  b: T.reB,  br: T.reBr  },
+    "Agendado":     { c: T.b,   b: T.bL,   br: T.b+"40" },
+    "Em andamento": { c: T.am,  b: T.amB,  br: T.amBr  },
+    "Concluído":    { c: T.gr,  b: T.grB,  br: T.grBr  },
+  };
+  const { c = T.txM, b = T.sur2, br = T.br } = map[st] || {};
+  return (
+    <span style={{
+      display:"inline-flex", alignItems:"center",
+      padding:"3px 10px", borderRadius:99,
+      fontSize:10, fontWeight:700, letterSpacing:".05em",
+      textTransform:"uppercase", whiteSpace:"nowrap",
+      background:b, color:c, border:`1px solid ${br}`,
+    }}>
+      {st || "—"}
+    </span>
+  );
+}
+
 function Badge({ label, color, bg, brd }) {
   return (
     <span style={{
