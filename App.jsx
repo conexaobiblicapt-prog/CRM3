@@ -6315,45 +6315,59 @@ function PageSalaVirtual({ pats }) {
   const [view, setView]             = useState("sala"); // "sala" | "chat"
   const [confirmEnc, setConfirmEnc] = useState(false);
   const [msgEnc, setMsgEnc]         = useState("Obrigada pela confiança! Atendimento encerrado. Cuide-se! 🌿");
+  const [refreshing, setRefreshing] = useState(false);
   const bottomRef = useRef();
   const inputRef  = useRef();
+  const selPacRef = useRef(selPac);
+  useEffect(() => { selPacRef.current = selPac; }, [selPac]);
 
   const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
 
-  // ── Polling REST API /salas_index (a cada 5s) ──
-  useEffect(()=>{
-    let active = true;
-    async function poll() {
-      try {
-        const r = await fetch(`${DB_URL}/salas_index.json`);
-        const data = await r.json();
-        if(active) setPortalPacs(data || {});
-      } catch(e) { console.warn("[Sala] poll salas_index:", e); }
-    }
-    poll();
-    const id = setInterval(poll, 5000);
-    return () => { active = false; clearInterval(id); };
+  // ── Funções de poll extraídas (podem ser chamadas manualmente) ──
+  const pollSala = useCallback(async () => {
+    try {
+      const r = await fetch(`${DB_URL}/salas_index.json`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setPortalPacs(data || {});
+    } catch(e) { console.warn("[Sala] poll salas_index:", e.message); }
   }, []);
 
-  // ── Polling REST API mensagens do paciente selecionado (a cada 3s) ──
+  const pollMsgsNow = useCallback(async () => {
+    const pac = selPacRef.current;
+    if (!pac) { setMsgs([]); return; }
+    try {
+      const r = await fetch(`${DB_URL}/salas/${pac.id}/msgs.json`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const val = await r.json();
+      const lista = val
+        ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
+        : [];
+      setMsgs(lista);
+    } catch(e) { console.warn("[Sala] poll msgs:", e.message); }
+  }, []);
+
+  // ── Botão Refresh manual ──
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([pollSala(), pollMsgsNow()]);
+    setTimeout(() => setRefreshing(false), 700);
+  }, [pollSala, pollMsgsNow]);
+
+  // ── Polling automático /salas_index (a cada 5s) ──
+  useEffect(()=>{
+    pollSala();
+    const id = setInterval(pollSala, 5000);
+    return () => clearInterval(id);
+  }, [pollSala]);
+
+  // ── Polling automático mensagens (a cada 3s) ──
   useEffect(()=>{
     if(!selPac) { setMsgs([]); return; }
-    let active = true;
-    async function pollMsgs() {
-      try {
-        const r = await fetch(`${DB_URL}/salas/${selPac.id}/msgs.json`);
-        const val = await r.json();
-        if(!active) return;
-        const lista = val
-          ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
-          : [];
-        setMsgs(lista);
-      } catch(e) { console.warn("[Sala] poll msgs:", e); }
-    }
-    pollMsgs();
-    const id = setInterval(pollMsgs, 3000);
-    return () => { active = false; clearInterval(id); };
-  }, [selPac]);
+    pollMsgsNow();
+    const id = setInterval(pollMsgsNow, 3000);
+    return () => clearInterval(id);
+  }, [selPac, pollMsgsNow]);
 
   useEffect(()=>{
     bottomRef.current?.scrollIntoView({ behavior:"smooth" });
@@ -6452,7 +6466,7 @@ function PageSalaVirtual({ pats }) {
             {FB_CONFIGURED ? "Sincronizando com Portal em tempo real" : "Firebase não configurado"}
           </div>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           {aguardando.length > 0 && (
             <span style={{ background:T.re, color:"#fff", borderRadius:99,
               padding:"3px 12px", fontSize:11, fontWeight:800 }}>
@@ -6465,6 +6479,15 @@ function PageSalaVirtual({ pats }) {
               {atendendo.length} em atendimento
             </span>
           )}
+          <button onClick={handleRefresh} title="Atualizar fila"
+            style={{ width:34, height:34, borderRadius:10, border:`1px solid ${T.br}`,
+              background:T.sur2, cursor:"pointer", display:"flex", alignItems:"center",
+              justifyContent:"center", flexShrink:0, transition:"transform .3s",
+              transform: refreshing ? "rotate(360deg)" : "rotate(0deg)" }}>
+            <span style={{ fontSize:15, display:"block",
+              animation: refreshing ? "spin .6s linear" : "none" }}>🔄</span>
+          </button>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
 
