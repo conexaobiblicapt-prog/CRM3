@@ -506,10 +506,11 @@ async function hashSenha(senha) {
 // Recepcao2026    → pré-calculado
 // ViniCRM2026     → pré-calculado
 const USERS_INIT = [
-  { id:1, u:"admin",    s:"5028aed3aa7c7bc6439da8d7cca6edb7c40a7e98c22abc1682213005e2bb8e3e", nome:"Administrador",      role:"admin",    email:"marcatti_vp@hotmail.com"      },
-  { id:2, u:"ilza",     s:"23ea8803af65e8414c31d05a7247d0c5ce837a5a812bebf318a056eddaeb2a01", nome:"Dra. Ilza Ezequiel", role:"medico",   email:"ilzaeneta@gmail.com"          },
-  { id:3, u:"recepcao", s:"650c3bcbe89f71c4a68dc6138edad53f48d73117d06775cf497f1b52d5be6386", nome:"Recepção",           role:"recepcao", email:"recepcao@drailza.com.br"      },
-  { id:4, u:"Vinícius", s:"afcdd2f7854b9e283b86e599ac1f021884900f77fe27cbd19c449f3f06e3ed19", nome:"Vinícius",           role:"admin",    email:"marcatti_vp@hotmail.com"      },
+  { id:1, u:"admin",             s:"5028aed3aa7c7bc6439da8d7cca6edb7c40a7e98c22abc1682213005e2bb8e3e", nome:"Administrador",      role:"admin",    email:"marcatti_vp@hotmail.com"  },
+  { id:2, u:"ilza",             s:"23ea8803af65e8414c31d05a7247d0c5ce837a5a812bebf318a056eddaeb2a01", nome:"Dra. Ilza Ezequiel", role:"medico",   email:"ilzaeneta@gmail.com"      },
+  { id:3, u:"recepcao",         s:"650c3bcbe89f71c4a68dc6138edad53f48d73117d06775cf497f1b52d5be6386", nome:"Recepção",           role:"recepcao", email:"recepcao@drailza.com.br"  },
+  { id:4, u:"Vinícius",         s:"afcdd2f7854b9e283b86e599ac1f021884900f77fe27cbd19c449f3f06e3ed19", nome:"Vinícius",           role:"admin",    email:"marcatti_vp@hotmail.com"  },
+  { id:5, u:"admin@drailza.com.br", s:"0b26ee69492137b82cd4f36a256d85b759c8fc6fe08c50e1fb3ee22bc0fd0dc5", nome:"Dra. Ilza Ezequiel", role:"admin",    email:"admin@drailza.com.br"     },
 ];
 
 // ── Rate limiting: máx 5 tentativas → bloqueio 15 minutos ──
@@ -6156,6 +6157,16 @@ function PageHome({ setPage, usuario }) {
     try { return safeLsGet("crm_exames_v26"); } catch { return []; }
   }, []);
   const consultas = consultasReal; // compatibilidade com gráficos abaixo
+
+  // Consultas e exames nos próximos 30 dias
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const em30 = new Date(hoje); em30.setDate(em30.getDate()+30);
+  const consultasConfirmadas = consultasReal.filter(c => {
+    try { const d=new Date(c.data||c.date||""); return d>=hoje && d<=em30; } catch{ return false; }
+  }).length;
+  const examesAgendados = examesReal.filter(e => {
+    try { const d=new Date(e.data||e.date||""); return d>=hoje && d<=em30; } catch{ return false; }
+  }).length;
 
   const [activeSeries, setActiveSeries] = useState(
     Object.fromEntries(SERIES_META.map(s => [s.key, true]))
