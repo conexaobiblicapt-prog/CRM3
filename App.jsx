@@ -6318,29 +6318,41 @@ function PageSalaVirtual({ pats }) {
   const bottomRef = useRef();
   const inputRef  = useRef();
 
-  // ── Escuta /salas_index em tempo real ──
+  const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+
+  // ── Polling REST API /salas_index (a cada 5s) ──
   useEffect(()=>{
-    if(!FB_CONFIGURED || !rtdb) return;
-    const r = ref(rtdb, "salas_index");
-    const unsub = onValue(r, snap => { setPortalPacs(snap.val() || {}); });
-    return () => off(r);
+    let active = true;
+    async function poll() {
+      try {
+        const r = await fetch(`${DB_URL}/salas_index.json`);
+        const data = await r.json();
+        if(active) setPortalPacs(data || {});
+      } catch(e) { console.warn("[Sala] poll salas_index:", e); }
+    }
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(id); };
   }, []);
 
-  // ── Escuta mensagens do paciente selecionado ──
+  // ── Polling REST API mensagens do paciente selecionado (a cada 3s) ──
   useEffect(()=>{
-    if(!selPac || !FB_CONFIGURED || !rtdb) { setMsgs([]); return; }
-    const r = ref(rtdb, `salas/${selPac.id}/msgs`);
-    const unsub = onValue(r, snap => {
-      const val = snap.val();
-      const lista = val
-        ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
-        : [];
-      setMsgs(lista);
-      const updates = {};
-      lista.forEach(m=>{ if(m.de==="pac"&&!m.lida) updates[`salas/${selPac.id}/msgs/${m.id}/lida`]=true; });
-      if(Object.keys(updates).length) update(ref(rtdb), updates);
-    });
-    return () => off(r);
+    if(!selPac) { setMsgs([]); return; }
+    let active = true;
+    async function pollMsgs() {
+      try {
+        const r = await fetch(`${DB_URL}/salas/${selPac.id}/msgs.json`);
+        const val = await r.json();
+        if(!active) return;
+        const lista = val
+          ? Object.entries(val).map(([k,v])=>({id:k,...v})).sort((a,b)=>(a.tsNum||0)-(b.tsNum||0))
+          : [];
+        setMsgs(lista);
+      } catch(e) { console.warn("[Sala] poll msgs:", e); }
+    }
+    pollMsgs();
+    const id = setInterval(pollMsgs, 3000);
+    return () => { active = false; clearInterval(id); };
   }, [selPac]);
 
   useEffect(()=>{
@@ -6370,9 +6382,11 @@ function PageSalaVirtual({ pats }) {
     return msgs.filter(m => m.de === "pac" && !m.lida && selPac?.id === pac.id).length;
   }
 
-  function atender(pac) {
-    if(FB_CONFIGURED && rtdb)
-      update(ref(rtdb, `salas_index/${pac.id}`), { status: "atendendo" });
+  async function atender(pac) {
+    await fetch(`${DB_URL}/salas_index/${pac.id}/status.json`, {
+      method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify("atendendo")
+    });
     setSelPac(pac);
     setView("chat");
   }
@@ -6383,15 +6397,18 @@ function PageSalaVirtual({ pats }) {
     setMsgs([]);
   }
 
-  function enviar() {
+  async function enviar() {
     const txt = texto.trim();
-    if(!txt || !selPac || !FB_CONFIGURED || !rtdb) return;
+    if(!txt || !selPac) return;
     const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-    push(ref(rtdb, `salas/${selPac.id}/msgs`), {
-      txt, de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true
+    const msgKey = "m" + Date.now();
+    await fetch(`${DB_URL}/salas/${selPac.id}/msgs/${msgKey}.json`, {
+      method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ txt, de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true })
     });
-    update(ref(rtdb, `salas_index/${selPac.id}`), {
-      ultimaTxt:"← "+txt.substring(0,50), ultimaTs:ts, tsNum:Date.now()
+    await fetch(`${DB_URL}/salas_index/${selPac.id}/ultimaTxt.json`, {
+      method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify("← "+txt.substring(0,50))
     });
     setTexto("");
     setTimeout(()=>inputRef.current?.focus(), 50);
@@ -6399,15 +6416,20 @@ function PageSalaVirtual({ pats }) {
 
   function onKey(e) { if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }
 
-  function encerrar() {
-    if(!selPac || !FB_CONFIGURED || !rtdb) return;
+  async function encerrar() {
+    if(!selPac) return;
     const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
     if(msgEnc.trim()) {
-      push(ref(rtdb, `salas/${selPac.id}/msgs`), {
-        txt:msgEnc.trim(), de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true
+      const msgKey = "m" + Date.now();
+      await fetch(`${DB_URL}/salas/${selPac.id}/msgs/${msgKey}.json`, {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ txt:msgEnc.trim(), de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true })
       });
     }
-    setTimeout(()=>remove(ref(rtdb, `salas_index/${selPac.id}`)), 800);
+    // Remove da fila
+    setTimeout(async()=>{
+      await fetch(`${DB_URL}/salas_index/${selPac.id}.json`, { method:"DELETE" });
+    }, 800);
     setConfirmEnc(false);
     voltarSala();
   }
