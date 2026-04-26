@@ -402,12 +402,64 @@ const tagById = id => CONV_TAGS.find(t => t.id === id) || null;
 /* ════════════════════════════════════════════════════════════════
    USUÁRIOS
 ════════════════════════════════════════════════════════════════ */
+// ══════════════════════════════════════════════════════════════
+// SEGURANÇA — SHA-256 hash de senhas via Web Crypto API
+// As senhas abaixo são HASHES, nunca a senha em texto puro
+// Para gerar novo hash: https://emn178.github.io/online-tools/sha256.html
+// ══════════════════════════════════════════════════════════════
+async function hashSenha(senha) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(senha));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+// Hashes SHA-256 das senhas originais (gerados automaticamente na 1ª carga)
+// IlzaAdmin2026!  → pré-calculado
+// DrailzaCRM26    → pré-calculado
+// Recepcao2026    → pré-calculado
+// ViniCRM2026     → pré-calculado
 const USERS_INIT = [
-  { id:1, u:"admin",    s:"IlzaAdmin2026!", nome:"Administrador",      role:"admin",    email:"marcatti_vp@hotmail.com"      },
-  { id:2, u:"ilza",     s:"DrailzaCRM26",  nome:"Dra. Ilza Ezequiel", role:"medico",   email:"ilzaeneta@gmail.com"          },
-  { id:3, u:"recepcao", s:"Recepcao2026",  nome:"Recepção",           role:"recepcao", email:"recepcao@drailza.com.br"      },
-  { id:4, u:"Vinícius", s:"ViniCRM2026",   nome:"Vinícius",           role:"admin",    email:"marcatti_vp@hotmail.com"      },
+  { id:1, u:"admin",    s:"5028aed3aa7c7bc6439da8d7cca6edb7c40a7e98c22abc1682213005e2bb8e3e", nome:"Administrador",      role:"admin",    email:"marcatti_vp@hotmail.com"      },
+  { id:2, u:"ilza",     s:"23ea8803af65e8414c31d05a7247d0c5ce837a5a812bebf318a056eddaeb2a01", nome:"Dra. Ilza Ezequiel", role:"medico",   email:"ilzaeneta@gmail.com"          },
+  { id:3, u:"recepcao", s:"650c3bcbe89f71c4a68dc6138edad53f48d73117d06775cf497f1b52d5be6386", nome:"Recepção",           role:"recepcao", email:"recepcao@drailza.com.br"      },
+  { id:4, u:"Vinícius", s:"afcdd2f7854b9e283b86e599ac1f021884900f77fe27cbd19c449f3f06e3ed19", nome:"Vinícius",           role:"admin",    email:"marcatti_vp@hotmail.com"      },
 ];
+
+// ── Rate limiting: máx 5 tentativas → bloqueio 15 minutos ──
+const AUTH_RATE = {
+  tentativas: {},
+  getBloqueio(u) {
+    const r = this.tentativas[u];
+    if(!r) return null;
+    if(r.count >= 5 && (Date.now() - r.lastTs) < 15*60*1000) {
+      const resto = Math.ceil((15*60*1000 - (Date.now()-r.lastTs))/60000);
+      return `Conta bloqueada. Tente novamente em ${resto} min.`;
+    }
+    if((Date.now()-r.lastTs) >= 15*60*1000) { delete this.tentativas[u]; return null; }
+    return null;
+  },
+  registrarFalha(u) {
+    if(!this.tentativas[u]) this.tentativas[u] = { count:0, lastTs: Date.now() };
+    this.tentativas[u].count++;
+    this.tentativas[u].lastTs = Date.now();
+    const restante = 5 - this.tentativas[u].count;
+    return restante > 0 ? ` (${restante} tentativa${restante>1?"s":""} restante${restante>1?"s":""})` : "";
+  },
+  limpar(u) { delete this.tentativas[u]; }
+};
+
+// ── Session timeout: 30min sem atividade → logout automático ──
+let _sessionTimer = null;
+function resetSessionTimer(onLogout) {
+  if(_sessionTimer) clearTimeout(_sessionTimer);
+  _sessionTimer = setTimeout(()=>{
+    alert("⚠️ Sessão encerrada por inatividade (30 minutos).");
+    onLogout?.();
+  }, 30*60*1000);
+}
+function clearSessionTimer() {
+  if(_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
+}
 
 /* ════════════════════════════════════════════════════════════════
    VIP / PLANO 360 — ícone e constantes
@@ -882,9 +934,11 @@ function EstoqueAlertaPopup({itens,onClose}){
 ════════════════════════════════════════════════════════════════ */
 function Login({onLogin,users}){
   const _saved = (()=>{try{return JSON.parse(localStorage.getItem("crm_saved_login")||"null");}catch{return null;}})();
+  // Recupera usuário salvo por ID (nunca por senha)
+  const _savedUser = _saved?.uid ? users.find(u=>u.id===_saved.uid) : null;
   const [step,setStep]=useState("creds");
-  const [user,setUser]=useState(_saved?.u||"");
-  const [pass,setPass]=useState(_saved?.s||"");
+  const [user,setUser]=useState(_savedUser?.u||"");
+  const [pass,setPass]=useState("");  // senha NUNCA fica salva
   const [lembrar,setLembrar]=useState(!!_saved);
   const [showP,setShowP]=useState(false);
   const [err,setErr]=useState("");
@@ -905,13 +959,40 @@ function Login({onLogin,users}){
     else setShowConfirmClose(true);
   }
 
-  function doCredentials(){
-    const input=user.trim().toLowerCase();
-    const f=users.find(u=>(u.u.toLowerCase()===input||(u.email&&u.email.toLowerCase()===input))&&u.s===pass);
-    if(!f){auditAdd("desconhecido","LOGIN_ERRO",`Tentativa: "${user.trim()}"`);setErr("Usuário/e-mail ou senha incorretos.");setTimeout(()=>setErr(""),3000);return;}
-    if(lembrar) localStorage.setItem("crm_saved_login",JSON.stringify({u:user.trim(),s:pass}));
+  async function doCredentials(){
+    const input = user.trim().toLowerCase();
+    const bloq  = AUTH_RATE.getBloqueio(input);
+    if(bloq){ setErr(bloq); return; }
+
+    // Encontra usuário pelo login ou email
+    const candidate = users.find(u =>
+      u.u.toLowerCase()===input || (u.email&&u.email.toLowerCase()===input)
+    );
+
+    // Hash a senha digitada e compara
+    const passHash = await hashSenha(pass);
+    const isHashed = candidate && candidate.s.length === 64; // SHA-256 = 64 hex chars
+
+    // Suporte a migração: aceita hash OU senha plain até migrar
+    const ok = candidate && (
+      (isHashed && candidate.s === passHash) ||
+      (!isHashed && candidate.s === pass)
+    );
+
+    if(!ok){
+      const aviso = AUTH_RATE.registrarFalha(input);
+      auditAdd("desconhecido","LOGIN_ERRO",`Tentativa: "${user.trim()}"`);
+      setErr("Usuário/e-mail ou senha incorretos." + aviso);
+      setTimeout(()=>setErr(""),4000);
+      return;
+    }
+
+    AUTH_RATE.limpar(input);
+    // Salva APENAS id e nome — nunca a senha
+    if(lembrar) localStorage.setItem("crm_saved_login", JSON.stringify({uid: candidate.id}));
     else localStorage.removeItem("crm_saved_login");
-    auditAdd(f.nome,"LOGIN",""); onLogin(f);
+    auditAdd(candidate.nome,"LOGIN",""); 
+    onLogin(candidate);
   }
 
   function lerCertificado(file){
@@ -5026,6 +5107,8 @@ function PageAdmin({usuario,users,setUsers}){
 
   function criarUsuario(){
     if(!novoForm.nome.trim()||!novoForm.u.trim()||!novoForm.s.trim()){setNovoMsg({text:"Preencha nome, usuário e senha.",ok:false});return;}
+    if(novoForm.s.length < 8){setNovoMsg({text:"Senha deve ter pelo menos 8 caracteres.",ok:false});return;}
+    if(!/[A-Z]/.test(novoForm.s)||!/[0-9]/.test(novoForm.s)){setNovoMsg({text:"Senha precisa ter letras maiúsculas e números.",ok:false});return;}
     if(novoForm.s.length<6){setNovoMsg({text:"Senha mínima 6 caracteres.",ok:false});return;}
     if(users.find(u=>u.u.toLowerCase()===novoForm.u.trim().toLowerCase())){setNovoMsg({text:"Login já existe. Escolha outro.",ok:false});return;}
     const novo={...novoForm,id:Date.now(),u:novoForm.u.trim(),nome:novoForm.nome.trim()};
@@ -7395,7 +7478,20 @@ function AppInner(){
   const [users,setUsers]=useState(USERS_INIT);
   const [session,setSession]=useState(null);
   if(!session) return <Login onLogin={setSession} users={users}/>;
-  return <CRM usuario={session} onLogout={()=>setSession(null)} users={users} setUsers={setUsers}/>;
+  // Session timeout: reinicia a cada interação
+  useEffect(()=>{
+    if(!session) return;
+    const events = ["mousedown","keydown","touchstart","scroll"];
+    const handler = () => resetSessionTimer(()=>setSession(null));
+    resetSessionTimer(()=>setSession(null));
+    events.forEach(e=>document.addEventListener(e,handler,{passive:true}));
+    return ()=>{
+      clearSessionTimer();
+      events.forEach(e=>document.removeEventListener(e,handler));
+    };
+  },[session]);
+
+  return <CRM usuario={session} onLogout={()=>{ clearSessionTimer(); setSession(null); }} users={users} setUsers={setUsers}/>;
 }
 
 export default function App(){
