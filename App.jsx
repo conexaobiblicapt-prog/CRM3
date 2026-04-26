@@ -26,18 +26,18 @@ if (FB_CONFIGURED) {
   };
 }
 
-// ─── Paleta warm v26 (usada pelos componentes novos) ─────────────────────────
+// ─── Paleta AZUL v32 — Administração ────────────────────────────────────────
 const T = {
-  side:"#1C1108", sideH:"#261808", sideAct:"rgba(200,156,98,.13)",
-  sideActBrd:"#C89C62", sideTx:"rgba(255,255,255,.38)", sideLabel:"rgba(255,255,255,.18)",
-  bg:"#F2E9DC", sur:"#FFFCF8", sur2:"#F8F1E8", sur3:"#F0E4D2",
-  b:"#A8722A", bL:"#FDF3E3", bM:"#8A5C1E",
-  tx:"#2C1A08", txM:"#7A5C3A", txS:"#B8967A",
-  br:"#E8D5BC", brD:"#D4B896",
-  gr:"#2D7A4F", grB:"#EDF7F1", grBr:"#86C9A4",
+  side:"#0d2137", sideH:"#0a1929", sideAct:"rgba(59,157,232,.15)",
+  sideActBrd:"#3B9DE8", sideTx:"rgba(255,255,255,.42)", sideLabel:"rgba(255,255,255,.20)",
+  bg:"#EBF2FB", sur:"#FFFFFF", sur2:"#F0F6FF", sur3:"#E3EDF8",
+  b:"#1A5FA8", bL:"#EBF2FB", bM:"#0d4080",
+  tx:"#0d1f3a", txM:"#3a5070", txS:"#7A9AB8",
+  br:"#C8DCF0", brD:"#A8C4E0",
+  gr:"#1A7A52", grB:"#E6F5EE", grBr:"#86C9A4",
   am:"#9A6A00", amB:"#FFF8E6", amBr:"#F0C060",
   re:"#C0392B", reB:"#FDF0EE", reBr:"#F0A090",
-  pu:"#6D4E8A", puB:"#F3EEF9", puBr:"#C5A8E0",
+  pu:"#4A3A8A", puB:"#F0EEF9", puBr:"#B0A0E0",
 };
 
 // ─── GlobalStyles v26 ─────────────────────────────────────────────────────────
@@ -48,20 +48,22 @@ function GlobalStyles() {
       *, *::before, *::after { box-sizing: border-box; }
       input, select, textarea, button { font-family: 'Outfit', sans-serif !important; }
       input:focus, select:focus, textarea:focus {
-        border-color: #A8722A !important;
-        box-shadow: 0 0 0 3.5px rgba(168,114,42,.15) !important;
+        border-color: #1A5FA8 !important;
+        box-shadow: 0 0 0 3.5px rgba(26,95,168,.15) !important;
         outline: none !important;
       }
-      ::-webkit-scrollbar { width: 5px; height: 5px; }
-      ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: #D4B896; border-radius: 99px; }
-      ::-webkit-scrollbar-thumb:hover { background: #B8967A; }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: #EBF2FB; }
+      ::-webkit-scrollbar-thumb { background: #A8C4E0; border-radius: 99px; }
+      ::-webkit-scrollbar-thumb:hover { background: #1A5FA8; }
+      html, body { height: 100%; overflow: hidden; }
+      #root { height: 100%; overflow: hidden; }
       /* Background sutil com imagem da Dra. Ilza */
       body::before {
         content: '';
         position: fixed;
         inset: 0;
-        background-image: url('https://static.wixstatic.com/media/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg/v1/fill/w_1200,h_1200,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg');
+        background-image: url('https://static.wixstatic.com/media/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg/v1/fill/w_1200,h_1200,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg'); background-color: #EBF2FB;
         background-size: cover;
         background-position: center top;
         opacity: 0.06;
@@ -5688,7 +5690,7 @@ function PageHome({ setPage, usuario }) {
 
       {/* Hero */}
       <div style={{ position:"relative", borderRadius:20, overflow:"hidden",
-        background:"linear-gradient(130deg,#1C1108 0%,#2E1A08 50%,#8A5C1E 100%)",
+        background:"linear-gradient(130deg,#0a1929 0%,#0d2137 45%,#1A5FA8 100%)",
         padding:"32px 36px", boxShadow:"0 12px 40px rgba(28,17,8,.3)" }}>
         <div style={{ position:"absolute", top:-60, right:-60, width:220, height:220,
           borderRadius:"50%", background:"rgba(255,255,255,.03)", pointerEvents:"none" }} />
@@ -6863,28 +6865,28 @@ function Topbar({ page, usuario }) {
     sala:"Sala Virtual",
   };
   return (
-    <div style={{ height:62, background:T.sur, borderBottom:`1px solid ${T.br}`,
+    <div style={{ height:62, background:"#0d2137", borderBottom:"1px solid rgba(59,157,232,.2)",
       display:"flex", alignItems:"center", justifyContent:"space-between",
       padding:"0 28px", flexShrink:0 }}>
       <div>
-        <div style={{ fontSize:17, fontWeight:700, color:T.tx, letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
-        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia</div>
+        <div style={{ fontSize:17, fontWeight:700, color:"#fff", letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
+        <div style={{ fontSize:11, color:"rgba(255,255,255,.5)", marginTop:1 }}>Gastroenterologia</div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         {/* Usuário logado real */}
-        <div style={{ display:"flex", alignItems:"center", gap:9, background:T.sur2,
-          border:`1.5px solid ${T.br}`, borderRadius:12, padding:"8px 14px" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:9, background:"rgba(59,157,232,.12)",
+          border:"1.5px solid rgba(59,157,232,.3)", borderRadius:12, padding:"8px 14px" }}>
           <div style={{ width:28, height:28, borderRadius:8,
-            background:`linear-gradient(135deg,#A8722A,#7A5018)`,
+            background:"linear-gradient(135deg,#1A5FA8,#3B9DE8)",
             display:"flex", alignItems:"center", justifyContent:"center",
             fontWeight:700, fontSize:11, color:"#fff", flexShrink:0 }}>
             {(usuario?.nome||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()}
           </div>
           <div>
-            <div style={{ fontSize:12, fontWeight:700, color:T.tx, lineHeight:1.3 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#fff", lineHeight:1.3 }}>
               {usuario?.nome?.split(" ").slice(0,2).join(" ") || "Usuário"}
             </div>
-            <div style={{ fontSize:10, color:T.txS, lineHeight:1.2, textTransform:"capitalize" }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,.55)", lineHeight:1.2, textTransform:"capitalize" }}>
               {usuario?.role || "—"}
             </div>
           </div>
@@ -6976,8 +6978,8 @@ function CRM({usuario,onLogout,users,setUsers}){
         />
       )}
 
-      <div style={{display:"flex",height:"100vh",
-        fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden"}}>
+      <div style={{display:"flex",height:"100vh",width:"100vw",
+        fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden",background:T.bg}}>
 
         {/* Sidebar v26 */}
         <Sidebar
@@ -6990,10 +6992,12 @@ function CRM({usuario,onLogout,users,setUsers}){
         />
 
         {/* Main area */}
-        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
           <Topbar page={page} usuario={usuario} />
-          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",background:T.bg}}>
-            {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
+          <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0}}>
+            <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:"min-content"}}>
+              {pages[page]||<div style={{padding:24,color:T.txM}}>Pagina nao encontrada</div>}
+            </div>
           </div>
         </div>
       </div>
@@ -7020,24 +7024,24 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{
           display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-          height:"100vh", background:"#F2E9DC", fontFamily:"system-ui, sans-serif", padding:32
+          height:"100vh", background:"#EBF2FB", fontFamily:"system-ui, sans-serif", padding:32
         }}>
           <div style={{
-            background:"#fff", border:"1.5px solid #E8D5BC", borderRadius:16,
+            background:"#fff", border:"1.5px solid #C8DCF0", borderRadius:16,
             padding:"32px 40px", maxWidth:520, textAlign:"center",
             boxShadow:"0 4px 24px rgba(44,26,8,.08)"
           }}>
             <div style={{fontSize:48, marginBottom:16}}>⚠️</div>
-            <h2 style={{color:"#A8722A", fontSize:20, fontWeight:700, margin:"0 0 8px"}}>
+            <h2 style={{color:"#1A5FA8", fontSize:20, fontWeight:700, margin:"0 0 8px"}}>
               Erro ao carregar o CRM
             </h2>
-            <p style={{color:"#7A5C3A", fontSize:13, margin:"0 0 20px", lineHeight:1.6}}>
+            <p style={{color:"#3a5070", fontSize:13, margin:"0 0 20px", lineHeight:1.6}}>
               {String(this.state.error?.message || "Erro desconhecido")}
             </p>
             <button
               onClick={() => { this.setState({hasError:false,error:null}); window.location.reload(); }}
               style={{
-                background:"linear-gradient(135deg,#A8722A,#C89C62)",
+                background:"linear-gradient(135deg,#1A5FA8,#3B9DE8)",
                 color:"#fff", border:"none", borderRadius:9,
                 padding:"10px 24px", fontWeight:700, fontSize:14, cursor:"pointer"
               }}
@@ -7066,7 +7070,7 @@ export default function App(){
     </ErrorBoundary>
   );
 }
-// CRM Dra. Ilza Ezequiel v32 — Fld corrigido, Btn variant, sync Portal
+// CRM Dra. Ilza Ezequiel v33 — Tema azul global, scroll em todas as páginas
 
 /* ════════════════════════════════════════════════════════════════
    BRIDGE CRM ↔ PORTAL — sincronização Firebase-style via localStorage
