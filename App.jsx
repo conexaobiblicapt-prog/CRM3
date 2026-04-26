@@ -6066,16 +6066,36 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
 }
 
 function PageHome({ setPage, usuario }) {
-  // Lê dados reais do localStorage
-  const patsReal = React.useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"); } catch { return []; }
+  // ── Lê dados REATIVOS do localStorage (polling 3s + storage event) ──
+  const [patsReal,      setPatsReal]      = useState(() => { try { return JSON.parse(localStorage.getItem("crm_pats_v26")||"[]");      } catch(e) { return []; } });
+  const [consultasReal, setConsultasReal] = useState(() => { try { return JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]"); } catch(e) { return []; } });
+  const [examesReal,    setExamesReal]    = useState(() => { try { return JSON.parse(localStorage.getItem("crm_exames_v26")||"[]");    } catch(e) { return []; } });
+
+  useEffect(() => {
+    function sync() {
+      try { setPatsReal(JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"));           } catch(e) {}
+      try { setConsultasReal(JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]")); } catch(e) {}
+      try { setExamesReal(JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"));       } catch(e) {}
+    }
+    const id = setInterval(sync, 3000);
+    window.addEventListener("storage", sync);
+    return () => { clearInterval(id); window.removeEventListener("storage", sync); };
   }, []);
-  const consultasReal = React.useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]"); } catch { return []; }
-  }, []);
-  const examesReal = React.useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"); } catch { return []; }
-  }, []);
+
+  // ── Contadores próximos 30 dias (exclui cancelados) ──
+  const hoje30  = new Date().toISOString().slice(0, 10);
+  const limite30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const consultasConfirmadas = consultasReal.filter(c => {
+    const d  = c.dt || c.data || c.date || "";
+    const st = (c.st || c.status || "").toLowerCase();
+    return d >= hoje30 && d <= limite30 && st !== "cancelado";
+  }).length;
+  const examesAgendados = examesReal.filter(e => {
+    const d  = e.dt || e.data || e.date || "";
+    const st = (e.st || e.status || "").toLowerCase();
+    return d >= hoje30 && d <= limite30 && st !== "cancelado";
+  }).length;
+
   const consultas = consultasReal; // compatibilidade com gráficos abaixo
 
   const [activeSeries, setActiveSeries] = useState(
@@ -6111,11 +6131,20 @@ function PageHome({ setPage, usuario }) {
             Bom dia, Dra. Ilza 👋
           </div>
           <div style={{ fontSize:14, color:"rgba(255,255,255,.48)", marginBottom:24, maxWidth:480 }}>
-            Você tem{" "}
-            <span style={{ color:"#E8C07A", fontWeight:700 }}>3 consultas confirmadas</span>
-            {" "}e{" "}
-            <span style={{ color:"#E8C07A", fontWeight:700 }}>2 exames agendados</span>
-            {" "}nos próximos dias.
+            {consultasConfirmadas === 0 && examesAgendados === 0 ? (
+              <span style={{ color:"rgba(255,255,255,.38)" }}>Nenhum agendamento nos próximos 30 dias.</span>
+            ) : (
+              <>
+                Você tem{" "}
+                {consultasConfirmadas > 0 && (
+                  <><span style={{ color:"#E8C07A", fontWeight:700 }}>{consultasConfirmadas} consulta{consultasConfirmadas !== 1 ? "s" : ""} confirmada{consultasConfirmadas !== 1 ? "s" : ""}</span>{examesAgendados > 0 ? " e " : ""}</>
+                )}
+                {examesAgendados > 0 && (
+                  <span style={{ color:"#E8C07A", fontWeight:700 }}>{examesAgendados} exame{examesAgendados !== 1 ? "s" : ""} agendado{examesAgendados !== 1 ? "s" : ""}</span>
+                )}
+                {" "}nos próximos 30 dias.
+              </>
+            )}
           </div>
           <div style={{ display:"flex", gap:10 }}>
             {[
@@ -7605,7 +7634,7 @@ class ErrorBoundary extends React.Component {
 function AppInner(){
   const [users,setUsers]=useState(USERS_INIT);
   const [session,setSession]=useState(null);
-  // Session timeout: DEVE ficar antes de qualquer return condicional (Rules of Hooks)
+  // REGRA DOS HOOKS: useEffect DEVE estar antes de qualquer return condicional
   useEffect(()=>{
     if(!session) return;
     const events = ["mousedown","keydown","touchstart","scroll"];
