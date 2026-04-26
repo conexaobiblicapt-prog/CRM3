@@ -6986,7 +6986,10 @@ function PageSalaVirtual({ pats }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) {
-  const sections = [
+  const isRecepcao = usuario?.role === "recepcao";
+  const RECEPCAO_HIDDEN = ["financas","estoque","marketing","admin","telemedicina"];
+
+  const allSections = [
     { label:"CLÍNICA", items:[
       { key:"home",         icon:"home",   label:"Dashboard"    },
       { key:"pacientes",    icon:"users",  label:"Pacientes"    },
@@ -7006,10 +7009,22 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
       { key:"tiktok",    icon:"tiktok", label:"TikTok"    },
     ]},
   ];
-  const bottomItems = [
+
+  // Filtra itens proibidos para recepção e remove seções vazias
+  const sections = allSections
+    .map(sec => ({
+      ...sec,
+      items: isRecepcao ? sec.items.filter(i => !RECEPCAO_HIDDEN.includes(i.key)) : sec.items
+    }))
+    .filter(sec => sec.items.length > 0);
+
+  const allBottomItems = [
     { key:"admin",  icon:"shield", label:"Administração" },
     { key:"perfil", icon:"user",   label:"Meu Perfil"    },
   ];
+  const bottomItems = isRecepcao
+    ? allBottomItems.filter(i => !RECEPCAO_HIDDEN.includes(i.key))
+    : allBottomItems;
   const NavItem = ({ item }) => {
     const active = page === item.key;
     return (
