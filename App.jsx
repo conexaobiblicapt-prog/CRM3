@@ -6985,7 +6985,7 @@ function PageSalaVirtual({ pats }) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) {
+function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, getBadge=()=>0 }) {
   const isRecepcao = usuario?.role === "recepcao";
   const RECEPCAO_HIDDEN = ["financas","estoque","marketing","admin","telemedicina"];
 
@@ -7027,6 +7027,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
     : allBottomItems;
   const NavItem = ({ item }) => {
     const active = page === item.key;
+    const badgeCount = getBadge(item.key);
     return (
       <button onClick={()=>setPage(item.key)} title={collapsed?item.label:undefined}
         style={{ width:"100%", display:"flex", alignItems:"center", gap:10,
@@ -7034,15 +7035,36 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
           cursor:"pointer", justifyContent:collapsed?"center":"flex-start",
           background:active?T.sideAct:"transparent",
           borderLeft:active?`2.5px solid ${T.sideActBrd}`:"2.5px solid transparent",
-          marginBottom:1, transition:"all .14s" }}
+          marginBottom:1, transition:"all .14s", position:"relative" }}
         onMouseEnter={e=>{ if(!active) e.currentTarget.style.background=T.sideH; }}
         onMouseLeave={e=>{ if(!active) e.currentTarget.style.background="transparent"; }}>
-        <Ic n={item.icon} sz={16} c={active?"#fff":T.sideTx} />
+        {/* Ícone com ponto vermelho de notificação */}
+        <div style={{ position:"relative", flexShrink:0 }}>
+          <Ic n={item.icon} sz={16} c={active?"#fff":T.sideTx} />
+          {badgeCount > 0 && (
+            <span style={{
+              position:"absolute", top:-4, right:-4,
+              width:8, height:8, borderRadius:"50%",
+              background:"#E53935",
+              border:"1.5px solid "+T.side,
+              display:"block"
+            }} />
+          )}
+        </div>
         {!collapsed && (
           <span style={{ fontSize:13, fontWeight:active?600:400,
-            color:active?"#fff":T.sideTx, whiteSpace:"nowrap" }}>{item.label}</span>
+            color:active?"#fff":T.sideTx, whiteSpace:"nowrap", flex:1 }}>{item.label}</span>
         )}
-        {active && !collapsed && (
+        {!collapsed && badgeCount > 0 && (
+          <span style={{
+            marginLeft:"auto", minWidth:18, height:18, borderRadius:9,
+            background:"#E53935", color:"#fff",
+            fontSize:10, fontWeight:700,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            padding:"0 5px", flexShrink:0
+          }}>{badgeCount}</span>
+        )}
+        {active && !collapsed && badgeCount === 0 && (
           <span style={{ marginLeft:"auto", width:6, height:6, borderRadius:"50%",
             background:T.sideActBrd, flexShrink:0 }} />
         )}
@@ -7191,6 +7213,27 @@ function CRM({usuario,onLogout,users,setUsers}){
   },[]);
   const criticos=estoqueItens.filter(i=>i.qtd<=i.min&&!alertasDismissed.includes(i.id));
 
+  // ── Badge Sala Virtual: polling /salas_index a cada 5s ──
+  const [salaAguardando, setSalaAguardando] = useState(0);
+  useEffect(()=>{
+    const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+    let active = true;
+    async function pollSala() {
+      try {
+        const r = await fetch(`${DB_URL}/salas_index.json`);
+        const data = await r.json();
+        if(!active) return;
+        const count = data
+          ? Object.values(data).filter(p => p.status === "aguardando").length
+          : 0;
+        setSalaAguardando(count);
+      } catch(e) { /* silencioso */ }
+    }
+    pollSala();
+    const id = setInterval(pollSala, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
   const RECEPCAO_BLOCKED = ["financas","estoque","marketing","admin","telemedicina"];
   const visNav=NAV.filter(n=>{
     if(n.key==="financas"&&usuario.role!=="admin"&&usuario.role!=="medico") return false;
@@ -7231,6 +7274,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     if(key==="tiktok") return TK_BASE.filter(c=>c.nova).length;
     if(key==="estoque") return estoqueItens.filter(i=>i.qtd<=i.min).length;
     if(key==="exames") return allExames.filter(e=>e.st==="Agendado").length;
+    if(key==="sala") return salaAguardando;
     return 0;
   };
 
@@ -7262,6 +7306,7 @@ function CRM({usuario,onLogout,users,setUsers}){
           setCollapsed={setCol}
           onLogout={()=>setShowSair(true)}
           usuario={usuario}
+          getBadge={getBadge}
         />
 
         {/* Main area */}
