@@ -7605,8 +7605,7 @@ class ErrorBoundary extends React.Component {
 function AppInner(){
   const [users,setUsers]=useState(USERS_INIT);
   const [session,setSession]=useState(null);
-  if(!session) return <Login onLogin={setSession} users={users}/>;
-  // Session timeout: reinicia a cada interação
+  // Session timeout: DEVE ficar antes de qualquer return condicional (Rules of Hooks)
   useEffect(()=>{
     if(!session) return;
     const events = ["mousedown","keydown","touchstart","scroll"];
@@ -7619,6 +7618,7 @@ function AppInner(){
     };
   },[session]);
 
+  if(!session) return <Login onLogin={setSession} users={users}/>;
   return <CRM usuario={session} onLogout={()=>{ clearSessionTimer(); setSession(null); }} users={users} setUsers={setUsers}/>;
 }
 
