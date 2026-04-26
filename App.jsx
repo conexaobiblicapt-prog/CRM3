@@ -3017,7 +3017,16 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
                     display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                     <Ic n="exam" sz={18} c={ac} />
                   </div>
-                  {stBadge(e.st)}
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    {stBadge(e.st)}
+                    {["admin","medico"].includes(usuario?.role) && (
+                      <button onClick={ev=>{ ev.stopPropagation(); if(window.confirm(`Excluir exame "${e.tipo}" de ${e.pac}?`)) setExames(p=>p.filter(x=>x.id!==e.id)); }}
+                        style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
+                          color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
+                          alignItems:"center", justifyContent:"center" }}
+                        title="Excluir exame">✕</button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ fontSize:13, fontWeight:700, color:T.tx,
                   marginBottom:5, lineHeight:1.4 }}>{e.tipo}</div>
@@ -3961,7 +3970,7 @@ function PageConsultas() {
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6, flexShrink:0 }}>
                   {stBadge(c.st)}
-                  <div style={{ display:"flex", gap:5 }}>
+                  <div style={{ display:"flex", gap:5, alignItems:"center" }}>
                     {["Confirmado","Aguardando","Cancelado"].filter(s=>s!==c.st).map(ns => (
                       <button key={ns}
                         onClick={()=>setConsultas(p=>p.map(x=>x.id===c.id?{...x,st:ns}:x))}
@@ -3973,6 +3982,13 @@ function PageConsultas() {
                         → {ns}
                       </button>
                     ))}
+                    {["admin","medico"].includes(usuario?.role) && (
+                      <button onClick={()=>{ if(window.confirm(`Excluir consulta de ${c.pac}?`)) setConsultas(p=>p.filter(x=>x.id!==c.id)); }}
+                        style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
+                          color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
+                          alignItems:"center", justifyContent:"center" }}
+                        title="Excluir consulta">✕</button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -5611,23 +5627,28 @@ const mockProntuarios = {
 // ─── Popup ficha paciente — SEM avatar ───────────────────────────────────────
 
 function PageHome({ setPage, usuario }) {
-  // Consultas do dia — lidas do localStorage para preview no dashboard
-  const consultas = React.useMemo(() => {
-    try {
-      const s = localStorage.getItem("crm_consultas_v26");
-      return s ? JSON.parse(s) : [];
-    } catch(e) { return []; }
+  // Lê dados reais do localStorage
+  const patsReal = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"); } catch { return []; }
   }, []);
+  const consultasReal = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]"); } catch { return []; }
+  }, []);
+  const examesReal = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("crm_exames_v26")||"[]"); } catch { return []; }
+  }, []);
+  const consultas = consultasReal; // compatibilidade com gráficos abaixo
+
   const [activeSeries, setActiveSeries] = useState(
     Object.fromEntries(SERIES_META.map(s => [s.key, true]))
   );
   const toggleSeries = k => setActiveSeries(p => ({ ...p, [k]: !p[k] }));
 
   const metrics = [
-    { icon:"users",  label:"Pacientes",   val:"247",    trend:"+8",   note:"novos este mês",  key:"pacientes", ac:"#A8722A", acBg:"#FDF3E3", pos:true  },
-    { icon:"cal",    label:"Consultas",   val:"18",     trend:"+3",   note:"vs semana ant.",  key:"consultas", ac:"#2D7A4F", acBg:"#EDF7F1", pos:true  },
-    { icon:"exam",   label:"Exames",      val:"12",     trend:"4",    note:"pendentes laudo", key:"exames",    ac:"#6D4E8A", acBg:"#F4EFF9", pos:false },
-    { icon:"money",  label:"Faturamento", val:"R$14.2k",trend:"+12%", note:"vs mês anterior", key:"financas",  ac:"#9A6A00", acBg:"#FFF8E6", pos:true  },
+    { icon:"users",  label:"Pacientes",   val:String(patsReal.length),      trend:"", note:"cadastrados",   key:"pacientes", ac:"#A8722A", acBg:"#FDF3E3", pos:true },
+    { icon:"cal",    label:"Consultas",   val:String(consultasReal.length),  trend:"", note:"agendadas",     key:"consultas", ac:"#2D7A4F", acBg:"#EDF7F1", pos:true },
+    { icon:"exam",   label:"Exames",      val:String(examesReal.length),     trend:"", note:"registrados",   key:"exames",    ac:"#6D4E8A", acBg:"#F4EFF9", pos:true },
+    { icon:"money",  label:"Financeiro",  val:"—",                           trend:"", note:"ver relatório", key:"financas",  ac:"#9A6A00", acBg:"#FFF8E6", pos:true },
   ];
 
   return (
@@ -6747,9 +6768,11 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario }) 
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
               <div style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,.75)", lineHeight:1.3 }}>
-                Dra. Ilza
+                {usuario?.nome?.split(" ").slice(0,2).join(" ") || "Usuário"}
               </div>
-              <div style={{ fontSize:10, color:T.sideLabel, lineHeight:1.3 }}>Administradora</div>
+              <div style={{ fontSize:10, color:T.sideLabel, lineHeight:1.3, textTransform:"capitalize" }}>
+                {usuario?.role || "—"}
+              </div>
             </div>
             <button style={{ background:"none", border:"none", cursor:"pointer",
               padding:4, borderRadius:6, display:"flex", opacity:.4 }}
@@ -6786,25 +6809,23 @@ function Topbar({ page, usuario }) {
         <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Gastroenterologia</div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-        <button style={{ position:"relative", background:T.sur2, border:`1.5px solid ${T.br}`,
-          borderRadius:10, width:38, height:38, display:"flex", alignItems:"center",
-          justifyContent:"center", cursor:"pointer" }}
-          onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.b; e.currentTarget.style.background=T.bL; }}
-          onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.br; e.currentTarget.style.background=T.sur2; }}>
-          <Ic n="bell" sz={16} c={T.txM} />
-          <span style={{ position:"absolute", top:7, right:7, width:7, height:7,
-            borderRadius:"50%", background:"#EF4444", border:"1.5px solid #fff" }} />
-        </button>
-        {/* v29: sem avatar — só nome + chevron */}
+        {/* Usuário logado real */}
         <div style={{ display:"flex", alignItems:"center", gap:9, background:T.sur2,
-          border:`1.5px solid ${T.br}`, borderRadius:12, padding:"8px 14px", cursor:"pointer" }}
-          onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.brD; e.currentTarget.style.background=T.sur3; }}
-          onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.br; e.currentTarget.style.background=T.sur2; }}>
-          <div>
-            <div style={{ fontSize:12, fontWeight:700, color:T.tx, lineHeight:1.3 }}>Dra. Ilza</div>
-            <div style={{ fontSize:10, color:T.txS, lineHeight:1.2 }}>Gastroenterologista</div>
+          border:`1.5px solid ${T.br}`, borderRadius:12, padding:"8px 14px" }}>
+          <div style={{ width:28, height:28, borderRadius:8,
+            background:`linear-gradient(135deg,#A8722A,#7A5018)`,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontWeight:700, fontSize:11, color:"#fff", flexShrink:0 }}>
+            {(usuario?.nome||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()}
           </div>
-          <Ic n="chevR" sz={12} c={T.txS} />
+          <div>
+            <div style={{ fontSize:12, fontWeight:700, color:T.tx, lineHeight:1.3 }}>
+              {usuario?.nome?.split(" ").slice(0,2).join(" ") || "Usuário"}
+            </div>
+            <div style={{ fontSize:10, color:T.txS, lineHeight:1.2, textTransform:"capitalize" }}>
+              {usuario?.role || "—"}
+            </div>
+          </div>
         </div>
       </div>
     </div>
