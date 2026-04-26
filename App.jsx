@@ -20,14 +20,21 @@ function safeLsGet(key, fallback = []) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw || raw === "undefined" || raw === "null") return fallback;
-    // Detecta valor corrompido (não começa com [ ou {)
     const trimmed = raw.trim();
+    // Detecta valor corrompido (não começa com [ ou { ou ")
     if (!trimmed.startsWith("[") && !trimmed.startsWith("{") && !trimmed.startsWith('"')) {
       console.warn("[CRM] localStorage corrompido — limpando:", key, "=>", trimmed.substring(0, 40));
       localStorage.removeItem(key);
       return fallback;
     }
-    return JSON.parse(trimmed);
+    const parsed = JSON.parse(trimmed);
+    // Se esperamos array mas veio outra coisa, retorna fallback
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) {
+      console.warn("[CRM] localStorage tipo errado — esperava array:", key);
+      localStorage.removeItem(key);
+      return fallback;
+    }
+    return parsed;
   } catch(e) {
     console.warn("[CRM] localStorage parse error — limpando:", key, e.message);
     localStorage.removeItem(key);
@@ -5896,7 +5903,8 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
 
   // Lê consultas do localStorage
   const consultas = React.useMemo(() => {
-    safeLsGet("crm_consultas_v26")
+    const r = safeLsGet("crm_consultas_v26");
+    return Array.isArray(r) ? r : [];
   }, []);
 
   // Filtra consultas de hoje
@@ -6148,13 +6156,13 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
 function PageHome({ setPage, usuario }) {
   // Lê dados reais do localStorage
   const patsReal = React.useMemo(() => {
-    try { return safeLsGet("crm_pats_v26"); } catch { return []; }
+    try { const r=safeLsGet("crm_pats_v26"); return Array.isArray(r)?r:[]; } catch { return []; }
   }, []);
   const consultasReal = React.useMemo(() => {
-    try { return safeLsGet("crm_consultas_v26"); } catch { return []; }
+    try { const r=safeLsGet("crm_consultas_v26"); return Array.isArray(r)?r:[]; } catch { return []; }
   }, []);
   const examesReal = React.useMemo(() => {
-    try { return safeLsGet("crm_exames_v26"); } catch { return []; }
+    try { const r=safeLsGet("crm_exames_v26"); return Array.isArray(r)?r:[]; } catch { return []; }
   }, []);
   const consultas = consultasReal; // compatibilidade com gráficos abaixo
 
@@ -7528,14 +7536,14 @@ function CRM({usuario,onLogout,users,setUsers}){
   const [mobileOpen, setMobileOpen] = useState(false);
   // Fecha sidebar ao trocar de página no mobile
   const setPageAndClose = (p) => { setPage(p); if(isMobile) setMobileOpen(false); };
-  const [pats,setPats]=useState(()=>safeLsGet("crm_pats_v26"));
+  const [pats,setPats]=useState(()=>{ const r=safeLsGet("crm_pats_v26"); return Array.isArray(r)?r:[]; });
   // Persiste pacientes no localStorage a cada alteracao
   useEffect(()=>{ localStorage.setItem("crm_pats_v26", JSON.stringify(pats)); },[pats]);
   const patsState=[pats,setPats];
   // Fila prioridade
   const [filaPrioridadeVis,setFilaPrioridadeVis]=useState(false);
   const [col,setCol]=useState(false);
-  const [estoqueItens,setEstoqueItens]=useState(()=>safeLsGet("crm_estoque_v26"));
+  const [estoqueItens,setEstoqueItens]=useState(()=>{ const r=safeLsGet("crm_estoque_v26"); return Array.isArray(r)?r:[]; });
   useEffect(()=>{localStorage.setItem("crm_estoque_v26",JSON.stringify(estoqueItens));},[estoqueItens]);
   const [alertasDismissed,setAlertasDismissed]=useState([]);
   const [showSair,setShowSair]=useState(false);   // ← popup confirmação sair
@@ -7580,7 +7588,7 @@ function CRM({usuario,onLogout,users,setUsers}){
   const estoqueState=[estoqueItens,setEstoqueItens];
 
   // useMemo evita recriar os componentes de pagina a cada render
-  const [allExames, setAllExames] = useState(()=>safeLsGet("crm_exames_v26"));
+  const [allExames, setAllExames] = useState(()=>{ const r=safeLsGet("crm_exames_v26"); return Array.isArray(r)?r:[]; });
   const [pacFiltro, setPacFiltro] = useState(null);
   useEffect(()=>{ localStorage.setItem("crm_exames_v26",JSON.stringify(allExames)); },[allExames]);
 
