@@ -7442,7 +7442,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
             animation:fbSyncStatus==="syncing"?"pulse 1s infinite":"none"}}/>
           <span style={{fontSize:9.5,fontWeight:600,
             color:fbSyncStatus==="ok"?"#86C9A4":fbSyncStatus==="syncing"?"#F0C060":"rgba(255,255,255,.25)"}}>
-            {fbSyncStatus==="ok"?"Firebase sincronizado ✓":fbSyncStatus==="syncing"?"Sincronizando...":"Aguardando..."}
+            {fbSyncStatus==="ok"?"Atualizando... ✓":fbSyncStatus==="syncing"?"Sincronizando...":"Aguardando..."}
           </span>
         </div>
       )}
