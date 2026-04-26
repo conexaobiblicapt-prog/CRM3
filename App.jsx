@@ -100,57 +100,14 @@ function GlobalStyles() {
       #root { height: 100%; overflow: hidden; }
 
       /* ── Responsivo Mobile ─────────────────────────────────── */
-      /* Bottom navigation bar para mobile */
-      .crm-mobile-nav {
-        position: fixed;
-        bottom: 0; left: 0; right: 0;
-        height: calc(58px + env(safe-area-inset-bottom, 0px));
-        background: #0d2137;
-        border-top: 1px solid rgba(59,157,232,.2);
-        display: flex;
-        z-index: 500;
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-      }
-      .crm-mobile-nav-item {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 3px;
-        cursor: pointer;
-        padding: 6px 2px;
-        border: none;
-        background: transparent;
-        color: rgba(255,255,255,.38);
-        font-family: 'Outfit', sans-serif;
-        font-size: 9px;
-        font-weight: 500;
-        letter-spacing: .03em;
-        transition: color .15s;
-        -webkit-tap-highlight-color: transparent;
-      }
-      .crm-mobile-nav-item.active { color: #3B9DE8; }
-      .crm-mobile-nav-item svg { opacity: .5; }
-      .crm-mobile-nav-item.active svg { opacity: 1; }
 
-      /* Overlay sidebar em mobile */
-      .crm-sidebar-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,.5);
-        z-index: 400;
-        backdrop-filter: blur(2px);
-      }
 
-      /* Tipografia mínima legível */
+
+
+      /* Tipografia mínima legível no mobile */
       @media (max-width: 767px) {
-        /* Padding seguro na area de conteudo com bottom nav */
-        .crm-main-content { padding-bottom: calc(58px + env(safe-area-inset-bottom, 8px)) !important; }
-        /* Inputs mais fáceis de tocar — previne zoom no iOS ao focar */
+        /* Inputs: previne zoom no iOS ao focar */
         input, select, textarea { font-size: 16px !important; }
-        /* Números de KPI e valores financeiros ficam legíveis */
-        [data-kpi] { font-size: clamp(18px, 5vw, 28px) !important; }
       }
       /* Background sutil com imagem da Dra. Ilza */
       body::before {
@@ -981,9 +938,8 @@ function Modal({title,onClose,children,width=600}){
       style={{
         position:"fixed", inset:0, zIndex:2000,
         background:"rgba(13,33,55,.65)", backdropFilter:"blur(4px)",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        padding:"16px",
-        // Empurra centro do modal para considerar a sidebar
+        display:"flex", alignItems:"flex-start", justifyContent:"center",
+        padding:"24px 16px",
         paddingLeft:"calc(var(--sidebar-w,0px) + 16px)",
         overflowY:"auto",
       }}>
@@ -993,7 +949,8 @@ function Modal({title,onClose,children,width=600}){
           width:"100%",
           // Nunca ultrapassa a área visível disponível (descontando sidebar + padding)
           maxWidth:`min(${width}px, calc(100vw - var(--sidebar-w,0px) - 32px))`,
-          maxHeight:"calc(100vh - 32px)",
+          maxHeight:"calc(100vh - 48px)",
+          height:"auto",
           display:"flex", flexDirection:"column",
           boxShadow:`0 24px 60px ${C.sh}`,
           flexShrink:0,
@@ -1008,7 +965,7 @@ function Modal({title,onClose,children,width=600}){
               fontSize:20,lineHeight:1,flexShrink:0}}>✕</button>
         </div>
         {/* Corpo com scroll próprio */}
-        <div style={{padding:20,overflowY:"auto",flex:1,minWidth:0}}>{children}</div>
+        <div style={{padding:20,overflowY:"auto",flex:"0 1 auto",minWidth:0,minHeight:0}}>{children}</div>
       </div>
     </div>
   );
@@ -3180,7 +3137,7 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
             onChange={e=>setQ(e.target.value)} placeholder="Filtrar exames..." />
         </div>
         <div style={{ border:`1.5px solid ${T.br}`, borderRadius:12, overflow:"hidden",
-          maxHeight:230, overflowY:"auto" }}>
+          maxHeight:260, overflowY:"auto" }}>
           {filteredE.map((e,i) => {
             const checked = selList.includes(e);
             return (
@@ -7672,7 +7629,12 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
   if (isMobile) {
     return (
       <>
-        <div className="crm-sidebar-overlay" onClick={()=>setMobileOpen(false)} />
+        <div style={{
+          position:"fixed", inset:0,
+          background:"rgba(0,0,0,.5)",
+          zIndex:499,
+          backdropFilter:"blur(2px)"
+        }} onClick={()=>setMobileOpen(false)} />
         <div style={{
           position:"fixed", top:0, left:0, bottom:0,
           zIndex:500,
@@ -7923,8 +7885,8 @@ function CRM({usuario,onLogout,users,setUsers}){
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
           <Topbar page={page} usuario={usuario} isMobile={isMobile} onMenuToggle={()=>setMobileOpen(o=>!o)} />
           <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0,
-            paddingBottom: isMobile ? "58px" : 0}}>
-            <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:"min-content"}}>
+            }}>
+            <div style={{display:"flex",flexDirection:"column",minHeight:"min-content"}}>
               {usuario.role==="recepcao" && RECEPCAO_BLOCKED.includes(page) ? (
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
                   flex:1,padding:40,gap:16,minHeight:400}}>
@@ -7948,25 +7910,7 @@ function CRM({usuario,onLogout,users,setUsers}){
         </div>
       </div>
 
-      {/* Bottom Navigation — apenas no mobile */}
-      {isMobile && (
-        <nav className="crm-mobile-nav">
-          {[
-            { key:"home",      icon:"🏠", label:"Início"    },
-            { key:"pacientes", icon:"👤", label:"Pacientes" },
-            { key:"consultas", icon:"📅", label:"Agenda"    },
-            { key:"whatsapp",  icon:"💬", label:"WhatsApp"  },
-            { key:"financas",  icon:"💰", label:"Financeiro"},
-          ].map(item => (
-            <button key={item.key}
-              className={`crm-mobile-nav-item${page===item.key?" active":""}`}
-              onClick={()=>setPageAndClose(item.key)}>
-              <span style={{fontSize:20}}>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-      )}
+
     </>
   );
 }
