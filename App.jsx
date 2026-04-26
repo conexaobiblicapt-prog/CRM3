@@ -40,6 +40,17 @@ const T = {
   pu:"#4A3A8A", puB:"#F0EEF9", puBr:"#B0A0E0",
 };
 
+// ─── Hook responsivo ─────────────────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 // ─── GlobalStyles v26 ─────────────────────────────────────────────────────────
 function GlobalStyles() {
   return (
@@ -58,6 +69,60 @@ function GlobalStyles() {
       ::-webkit-scrollbar-thumb:hover { background: #1A5FA8; }
       html, body { height: 100%; overflow: hidden; }
       #root { height: 100%; overflow: hidden; }
+
+      /* ── Responsivo Mobile ─────────────────────────────────── */
+      /* Bottom navigation bar para mobile */
+      .crm-mobile-nav {
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        height: calc(58px + env(safe-area-inset-bottom, 0px));
+        background: #0d2137;
+        border-top: 1px solid rgba(59,157,232,.2);
+        display: flex;
+        z-index: 500;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      .crm-mobile-nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        cursor: pointer;
+        padding: 6px 2px;
+        border: none;
+        background: transparent;
+        color: rgba(255,255,255,.38);
+        font-family: 'Outfit', sans-serif;
+        font-size: 9px;
+        font-weight: 500;
+        letter-spacing: .03em;
+        transition: color .15s;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .crm-mobile-nav-item.active { color: #3B9DE8; }
+      .crm-mobile-nav-item svg { opacity: .5; }
+      .crm-mobile-nav-item.active svg { opacity: 1; }
+
+      /* Overlay sidebar em mobile */
+      .crm-sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.5);
+        z-index: 400;
+        backdrop-filter: blur(2px);
+      }
+
+      /* Tipografia mínima legível */
+      @media (max-width: 767px) {
+        /* Padding seguro na area de conteudo com bottom nav */
+        .crm-main-content { padding-bottom: calc(58px + env(safe-area-inset-bottom, 8px)) !important; }
+        /* Inputs mais fáceis de tocar — previne zoom no iOS ao focar */
+        input, select, textarea { font-size: 16px !important; }
+        /* Números de KPI e valores financeiros ficam legíveis */
+        [data-kpi] { font-size: clamp(18px, 5vw, 28px) !important; }
+      }
       /* Background sutil com imagem da Dra. Ilza */
       body::before {
         content: '';
@@ -7068,7 +7133,7 @@ function PageSalaVirtual({ pats }) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, getBadge=()=>0 }) {
+function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, getBadge=()=>0, mobileOpen, setMobileOpen, isMobile }) {
   const isRecepcao = usuario?.role === "recepcao";
   const RECEPCAO_HIDDEN = ["financas","estoque","marketing","admin","telemedicina"];
 
@@ -7154,8 +7219,12 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
       </button>
     );
   };
-  return (
-    <div style={{ width:collapsed?62:230, background:T.side, display:"flex",
+
+  // Em mobile: retorna null quando fechado (mostra como overlay quando aberto)
+  if (isMobile && !mobileOpen) return null;
+
+  const sidebarContent = (
+    <div style={{ width: isMobile ? 260 : (collapsed ? 62 : 230), background:T.side, display:"flex",
       flexDirection:"column", transition:"width .22s cubic-bezier(.4,0,.2,1)",
       overflow:"hidden", flexShrink:0, userSelect:"none" }}>
       {/* Logo */}
@@ -7230,10 +7299,27 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
       </div>
     </div>
   );
+
+  if (isMobile) {
+    return (
+      <>
+        <div className="crm-sidebar-overlay" onClick={()=>setMobileOpen(false)} />
+        <div style={{
+          position:"fixed", top:0, left:0, bottom:0,
+          zIndex:500,
+          boxShadow:"4px 0 24px rgba(0,0,0,.4)",
+          display:"flex"
+        }}>
+          {sidebarContent}
+        </div>
+      </>
+    );
+  }
+  return sidebarContent;
 }
 
 
-function Topbar({ page, usuario }) {
+function Topbar({ page, usuario, onMenuToggle, isMobile }) {
   const labels = {
     home:"Dashboard", pacientes:"Pacientes", exames:"Exames", consultas:"Consultas",
     telemedicina:"Telemedicina", financas:"Financeiro", estoque:"Estoque",
@@ -7244,28 +7330,42 @@ function Topbar({ page, usuario }) {
   return (
     <div style={{ height:62, background:"#0d2137", borderBottom:"1px solid rgba(59,157,232,.2)",
       display:"flex", alignItems:"center", justifyContent:"space-between",
-      padding:"0 28px", flexShrink:0 }}>
-      <div>
-        <div style={{ fontSize:17, fontWeight:700, color:"#fff", letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
-        <div style={{ fontSize:11, color:"rgba(255,255,255,.5)", marginTop:1 }}>Gastroenterologia</div>
+      padding: isMobile ? "0 16px" : "0 28px", flexShrink:0 }}>
+      <div style={{display:"flex", alignItems:"center", gap: isMobile ? 10 : 0}}>
+        {isMobile && (
+          <button onClick={onMenuToggle} style={{
+            background:"rgba(59,157,232,.12)", border:"1.5px solid rgba(59,157,232,.25)",
+            borderRadius:9, width:38, height:38, display:"flex", alignItems:"center",
+            justifyContent:"center", cursor:"pointer", flexShrink:0
+          }}>
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+              stroke="#fff" strokeWidth={2} strokeLinecap="round">
+              <path d="M3 6h18M3 12h18M3 18h18"/>
+            </svg>
+          </button>
+        )}
+        <div>
+          <div style={{ fontSize: isMobile ? 15 : 17, fontWeight:700, color:"#fff", letterSpacing:"-.025em" }}>{labels[page]||"CRM"}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,.5)", marginTop:1 }}>Gastroenterologia</div>
+        </div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <div style={{ display:"flex", alignItems:"center", gap:9, background:"rgba(59,157,232,.12)",
-          border:"1.5px solid rgba(59,157,232,.3)", borderRadius:12, padding:"8px 14px" }}>
+          border:"1.5px solid rgba(59,157,232,.3)", borderRadius:12, padding: isMobile ? "6px 10px" : "8px 14px" }}>
           <div style={{ width:28, height:28, borderRadius:8,
             background:"linear-gradient(135deg,#1A5FA8,#3B9DE8)",
             display:"flex", alignItems:"center", justifyContent:"center",
             fontWeight:700, fontSize:11, color:"#fff", flexShrink:0 }}>
             {(usuario?.nome||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()}
           </div>
-          <div>
+          {!isMobile && <div>
             <div style={{ fontSize:12, fontWeight:700, color:"#fff", lineHeight:1.3 }}>
               {usuario?.nome?.split(" ").slice(0,2).join(" ") || "Usuário"}
             </div>
             <div style={{ fontSize:10, color:"rgba(255,255,255,.55)", lineHeight:1.2, textTransform:"capitalize" }}>
               {usuario?.role || "—"}
             </div>
-          </div>
+          </div>}
         </div>
       </div>
     </div>
@@ -7277,6 +7377,10 @@ function Topbar({ page, usuario }) {
 
 function CRM({usuario,onLogout,users,setUsers}){
   const [page,setPage]=useState("home");
+  const isMobile = useIsMobile();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Fecha sidebar ao trocar de página no mobile
+  const setPageAndClose = (p) => { setPage(p); if(isMobile) setMobileOpen(false); };
   const [pats,setPats]=useState(()=>JSON.parse(localStorage.getItem("crm_pats_v26")||"[]"));
   // Persiste pacientes no localStorage a cada alteracao
   useEffect(()=>{ localStorage.setItem("crm_pats_v26", JSON.stringify(pats)); },[pats]);
@@ -7378,24 +7482,28 @@ function CRM({usuario,onLogout,users,setUsers}){
         />
       )}
 
-      <div style={{display:"flex",height:"100vh",width:"100vw",
+      <div style={{display:"flex",height:"100vh",height:"100dvh",width:"100vw",
         fontFamily:"'Outfit',system-ui,sans-serif",color:T.tx,overflow:"hidden",background:T.bg}}>
 
-        {/* Sidebar v26 */}
+        {/* Sidebar v26 — escondido no mobile, overlay quando aberto */}
         <Sidebar
           page={page}
-          setPage={setPage}
-          collapsed={col}
+          setPage={setPageAndClose}
+          collapsed={isMobile ? false : col}
           setCollapsed={setCol}
           onLogout={()=>setShowSair(true)}
           usuario={usuario}
           getBadge={getBadge}
+          isMobile={isMobile}
+          mobileOpen={mobileOpen}
+          setMobileOpen={setMobileOpen}
         />
 
         {/* Main area */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
-          <Topbar page={page} usuario={usuario} />
-          <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0}}>
+          <Topbar page={page} usuario={usuario} isMobile={isMobile} onMenuToggle={()=>setMobileOpen(o=>!o)} />
+          <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0,
+            paddingBottom: isMobile ? "58px" : 0}}>
             <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:"min-content"}}>
               {usuario.role==="recepcao" && RECEPCAO_BLOCKED.includes(page) ? (
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
@@ -7405,7 +7513,7 @@ function CRM({usuario,onLogout,users,setUsers}){
                   <div style={{fontSize:13,color:T.txM,textAlign:"center",maxWidth:360}}>
                     Seu perfil de Recepção não tem permissão para acessar esta área.
                   </div>
-                  <button onClick={()=>setPage("home")}
+                  <button onClick={()=>setPageAndClose("home")}
                     style={{marginTop:8,background:T.b,color:"#fff",border:"none",
                       borderRadius:10,padding:"10px 24px",fontWeight:700,
                       fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -7419,6 +7527,26 @@ function CRM({usuario,onLogout,users,setUsers}){
           </div>
         </div>
       </div>
+
+      {/* Bottom Navigation — apenas no mobile */}
+      {isMobile && (
+        <nav className="crm-mobile-nav">
+          {[
+            { key:"home",      icon:"🏠", label:"Início"    },
+            { key:"pacientes", icon:"👤", label:"Pacientes" },
+            { key:"consultas", icon:"📅", label:"Agenda"    },
+            { key:"whatsapp",  icon:"💬", label:"WhatsApp"  },
+            { key:"financas",  icon:"💰", label:"Financeiro"},
+          ].map(item => (
+            <button key={item.key}
+              className={`crm-mobile-nav-item${page===item.key?" active":""}`}
+              onClick={()=>setPageAndClose(item.key)}>
+              <span style={{fontSize:20}}>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
     </>
   );
 }
