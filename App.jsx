@@ -26,7 +26,7 @@ if (FB_CONFIGURED) {
   };
 }
 
-// ─── Paleta AZUL v32 — Administração ────────────────────────────────────────
+// ─── Paleta AZUL v34 ────────────────────────────────────────────────────────
 const T = {
   side:"#0d2137", sideH:"#0a1929", sideAct:"rgba(59,157,232,.15)",
   sideActBrd:"#3B9DE8", sideTx:"rgba(255,255,255,.42)", sideLabel:"rgba(255,255,255,.20)",
@@ -63,7 +63,7 @@ function GlobalStyles() {
         content: '';
         position: fixed;
         inset: 0;
-        background-image: url('https://static.wixstatic.com/media/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg/v1/fill/w_1200,h_1200,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg'); background-color: #EBF2FB;
+        background-image: url('https://static.wixstatic.com/media/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg/v1/fill/w_1200,h_1200,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/1f0134_4b022142b1b84bf0a5cec5b4a81f1c3d~mv2.jpg');
         background-size: cover;
         background-position: center top;
         opacity: 0.06;
@@ -5660,6 +5660,263 @@ const mockProntuarios = {
 
 // ─── Popup ficha paciente — SEM avatar ───────────────────────────────────────
 
+
+// ─── Dashboard Recepção ─────────────────────────────────────────────────────
+function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
+  const hoje = new Date();
+  const hojeStr = hoje.toISOString().slice(0, 10);
+
+  // Lê consultas do localStorage
+  const consultas = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("crm_consultas_v26") || "[]"); } catch { return []; }
+  }, []);
+
+  // Filtra consultas de hoje
+  const consultasHoje = consultas.filter(c => {
+    const d = c.data || c.dt || c.date || "";
+    return d.startsWith(hojeStr);
+  });
+
+  // Filtra exames de hoje
+  const examesHoje = allExames.filter(e => {
+    const d = e.data || e.dt || e.date || "";
+    return d.startsWith(hojeStr);
+  });
+
+  // Próximas consultas (próximos 7 dias)
+  const proximas = consultas.filter(c => {
+    const d = c.data || c.dt || c.date || "";
+    return d > hojeStr && d <= new Date(Date.now() + 7*86400000).toISOString().slice(0,10);
+  }).sort((a,b)=>(a.data||"").localeCompare(b.data||"")).slice(0,8);
+
+  const dias = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+  const meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const dataLabel = `${dias[hoje.getDay()]}, ${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
+
+  const StatusBadge = ({ st }) => {
+    const map = {
+      "Confirmado":   { bg:"#E6F5EE", tx:"#1A7A52", dot:"#1A7A52" },
+      "Agendado":     { bg:"#EBF2FB", tx:"#1A5FA8", dot:"#1A5FA8" },
+      "Aguardando":   { bg:"#FFF8E6", tx:"#9A6A00", dot:"#F0C060" },
+      "Realizado":    { bg:"#F0EEF9", tx:"#4A3A8A", dot:"#B0A0E0" },
+      "Cancelado":    { bg:"#FDF0EE", tx:"#C0392B", dot:"#F0A090" },
+    };
+    const s = map[st] || map["Agendado"];
+    return (
+      <span style={{ display:"inline-flex", alignItems:"center", gap:5,
+        background:s.bg, color:s.tx, fontSize:10, fontWeight:700,
+        padding:"3px 9px", borderRadius:99 }}>
+        <span style={{ width:5, height:5, borderRadius:"50%", background:s.dot, display:"inline-block" }}/>
+        {st || "Agendado"}
+      </span>
+    );
+  };
+
+  return (
+    <div className="page" style={{ padding:"24px 28px 48px", display:"flex", flexDirection:"column", gap:20 }}>
+
+      {/* ── Hero recepção ── */}
+      <div style={{ borderRadius:18, overflow:"hidden", position:"relative",
+        background:"linear-gradient(130deg,#0a1929 0%,#0d2137 50%,#1A5FA8 100%)",
+        padding:"26px 32px", boxShadow:"0 8px 32px rgba(13,33,55,.25)" }}>
+        <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160,
+          borderRadius:"50%", background:"rgba(59,157,232,.07)", pointerEvents:"none" }}/>
+        <div style={{ position:"relative" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:"rgba(255,255,255,.38)",
+            letterSpacing:".14em", textTransform:"uppercase", marginBottom:6 }}>
+            {dataLabel.toUpperCase()}
+          </div>
+          <div style={{ fontSize:24, fontWeight:800, color:"#fff", letterSpacing:"-.02em", marginBottom:6 }}>
+            Olá, {usuario.nome?.split(" ")[0]} 👋 — Recepção
+          </div>
+          <div style={{ fontSize:13, color:"rgba(255,255,255,.5)" }}>
+            Aqui estão os atendimentos e exames de hoje.
+          </div>
+        </div>
+        {/* Contadores rápidos no hero */}
+        <div style={{ display:"flex", gap:12, marginTop:18 }}>
+          {[
+            { label:"Consultas hoje",   val:consultasHoje.length, color:"#3B9DE8" },
+            { label:"Exames hoje",      val:examesHoje.length,    color:"#86C9A4" },
+            { label:"Total pacientes",  val:pats.length,          color:"#B0A0E0" },
+          ].map(c => (
+            <div key={c.label} style={{ background:"rgba(255,255,255,.08)", backdropFilter:"blur(8px)",
+              border:"1px solid rgba(255,255,255,.12)", borderRadius:12,
+              padding:"10px 16px", minWidth:120 }}>
+              <div style={{ fontSize:22, fontWeight:800, color:c.color }}>{c.val}</div>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,.5)", marginTop:2 }}>{c.label}</div>
+            </div>
+          ))}
+          <button onClick={()=>setPage("pacientes")}
+            style={{ marginLeft:"auto", alignSelf:"flex-end",
+              background:"rgba(255,255,255,.12)", border:"1px solid rgba(255,255,255,.2)",
+              color:"#fff", borderRadius:10, padding:"9px 18px",
+              fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+            + Novo paciente
+          </button>
+        </div>
+      </div>
+
+      {/* ── Grid 2 colunas: Consultas | Exames de hoje ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+
+        {/* Consultas hoje */}
+        <div style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:16,
+          boxShadow:"0 2px 12px rgba(13,33,55,.06)", display:"flex", flexDirection:"column" }}>
+          <div style={{ padding:"16px 20px 12px", borderBottom:`1px solid ${T.br}`,
+            display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+              <div style={{ width:34, height:34, borderRadius:10, background:T.bL,
+                display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <Ic n="cal" sz={16} c={T.b} />
+              </div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Consultas de hoje</div>
+                <div style={{ fontSize:11, color:T.txS }}>{consultasHoje.length} agendada{consultasHoje.length!==1?"s":""}</div>
+              </div>
+            </div>
+            <button onClick={()=>setPage("agenda")}
+              style={{ background:T.bL, color:T.b, border:`1px solid ${T.br}`,
+                borderRadius:8, padding:"5px 12px", fontSize:11, fontWeight:600,
+                cursor:"pointer", fontFamily:"inherit" }}>Ver tudo</button>
+          </div>
+          <div style={{ overflowY:"auto", maxHeight:320 }}>
+            {consultasHoje.length === 0 ? (
+              <div style={{ padding:"32px 20px", textAlign:"center" }}>
+                <div style={{ fontSize:28, marginBottom:8 }}>📅</div>
+                <div style={{ fontSize:13, color:T.txS }}>Nenhuma consulta agendada para hoje</div>
+              </div>
+            ) : consultasHoje.map((c,i) => (
+              <div key={c.id||i} style={{ padding:"12px 20px",
+                borderBottom: i < consultasHoje.length-1 ? `1px solid ${T.br}` : "none",
+                display:"flex", alignItems:"center", justifyContent:"space-between",
+                transition:"background .15s" }}
+                onMouseEnter={e=>e.currentTarget.style.background=T.sur2}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:34, height:34, borderRadius:9, flexShrink:0,
+                    background:"linear-gradient(135deg,#1A5FA8,#3B9DE8)",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    color:"#fff", fontWeight:700, fontSize:12 }}>
+                    {(c.pac||c.paciente||c.nome||"?").charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>
+                      {c.pac||c.paciente||c.nome||"—"}
+                    </div>
+                    <div style={{ fontSize:11, color:T.txS }}>
+                      {c.hora||c.horario||c.time||"—"} · {c.tipo||c.especialidade||"Consulta"}
+                    </div>
+                  </div>
+                </div>
+                <StatusBadge st={c.st||c.status||"Agendado"} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Exames hoje */}
+        <div style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:16,
+          boxShadow:"0 2px 12px rgba(13,33,55,.06)", display:"flex", flexDirection:"column" }}>
+          <div style={{ padding:"16px 20px 12px", borderBottom:`1px solid ${T.br}`,
+            display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+              <div style={{ width:34, height:34, borderRadius:10, background:T.grB,
+                display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <Ic n="exam" sz={16} c={T.gr} />
+              </div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Exames de hoje</div>
+                <div style={{ fontSize:11, color:T.txS }}>{examesHoje.length} agendado{examesHoje.length!==1?"s":""}</div>
+              </div>
+            </div>
+            <button onClick={()=>setPage("exames")}
+              style={{ background:T.grB, color:T.gr, border:`1px solid ${T.grBr}`,
+                borderRadius:8, padding:"5px 12px", fontSize:11, fontWeight:600,
+                cursor:"pointer", fontFamily:"inherit" }}>Ver tudo</button>
+          </div>
+          <div style={{ overflowY:"auto", maxHeight:320 }}>
+            {examesHoje.length === 0 ? (
+              <div style={{ padding:"32px 20px", textAlign:"center" }}>
+                <div style={{ fontSize:28, marginBottom:8 }}>🔬</div>
+                <div style={{ fontSize:13, color:T.txS }}>Nenhum exame agendado para hoje</div>
+              </div>
+            ) : examesHoje.map((e,i) => (
+              <div key={e.id||i} style={{ padding:"12px 20px",
+                borderBottom: i < examesHoje.length-1 ? `1px solid ${T.br}` : "none",
+                display:"flex", alignItems:"center", justifyContent:"space-between",
+                transition:"background .15s" }}
+                onMouseEnter={el=>el.currentTarget.style.background=T.sur2}
+                onMouseLeave={el=>el.currentTarget.style.background="transparent"}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:34, height:34, borderRadius:9, flexShrink:0,
+                    background:"linear-gradient(135deg,#1A7A52,#28a86e)",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    color:"#fff", fontWeight:700, fontSize:12 }}>
+                    {(e.pac||e.paciente||e.nome||"?").charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>
+                      {e.pac||e.paciente||e.nome||"—"}
+                    </div>
+                    <div style={{ fontSize:11, color:T.txS }}>
+                      {e.hora||e.horario||"—"} · {e.tipo||e.exame||"Exame"}
+                    </div>
+                  </div>
+                </div>
+                <StatusBadge st={e.st||e.status||"Agendado"} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Próximas consultas (7 dias) ── */}
+      <div style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:16,
+        boxShadow:"0 2px 12px rgba(13,33,55,.06)" }}>
+        <div style={{ padding:"16px 20px 12px", borderBottom:`1px solid ${T.br}`,
+          display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+            <div style={{ width:34, height:34, borderRadius:10, background:"#EEF2FF",
+              display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <Ic n="clock" sz={16} c="#4A3A8A" />
+            </div>
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Próximos 7 dias</div>
+              <div style={{ fontSize:11, color:T.txS }}>{proximas.length} consulta{proximas.length!==1?"s":""} agendada{proximas.length!==1?"s":""}</div>
+            </div>
+          </div>
+        </div>
+        {proximas.length === 0 ? (
+          <div style={{ padding:"28px 20px", textAlign:"center" }}>
+            <div style={{ fontSize:13, color:T.txS }}>Nenhuma consulta nos próximos 7 dias</div>
+          </div>
+        ) : (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:0 }}>
+            {proximas.map((c,i) => (
+              <div key={c.id||i} style={{ padding:"12px 20px",
+                borderRight: `1px solid ${T.br}`,
+                borderBottom: `1px solid ${T.br}` }}>
+                <div style={{ fontSize:10, fontWeight:700, color:T.b,
+                  textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>
+                  {c.data ? new Date(c.data+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"}) : "—"}
+                </div>
+                <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>
+                  {c.pac||c.paciente||c.nome||"—"}
+                </div>
+                <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>
+                  {c.hora||"—"} · {c.tipo||"Consulta"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
 function PageHome({ setPage, usuario }) {
   // Lê dados reais do localStorage
   const patsReal = React.useMemo(() => {
@@ -6873,7 +7130,6 @@ function Topbar({ page, usuario }) {
         <div style={{ fontSize:11, color:"rgba(255,255,255,.5)", marginTop:1 }}>Gastroenterologia</div>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-        {/* Usuário logado real */}
         <div style={{ display:"flex", alignItems:"center", gap:9, background:"rgba(59,157,232,.12)",
           border:"1.5px solid rgba(59,157,232,.3)", borderRadius:12, padding:"8px 14px" }}>
           <div style={{ width:28, height:28, borderRadius:8,
@@ -6920,10 +7176,12 @@ function CRM({usuario,onLogout,users,setUsers}){
   },[]);
   const criticos=estoqueItens.filter(i=>i.qtd<=i.min&&!alertasDismissed.includes(i.id));
 
+  const RECEPCAO_BLOCKED = ["financas","estoque","marketing","admin","telemedicina"];
   const visNav=NAV.filter(n=>{
     if(n.key==="financas"&&usuario.role!=="admin"&&usuario.role!=="medico") return false;
     if(n.key==="estoque"&&usuario.role==="atendente") return false;
     if(n.key==="admin"&&usuario.role!=="admin"&&usuario.role!=="medico") return false;
+    if(usuario.role==="recepcao"&&RECEPCAO_BLOCKED.includes(n.key)) return false;
     return true;
   });
 
@@ -6935,7 +7193,7 @@ function CRM({usuario,onLogout,users,setUsers}){
   useEffect(()=>{ localStorage.setItem("crm_exames_v26",JSON.stringify(allExames)); },[allExames]);
 
   const pages = useMemo(() => ({
-    home:        <PageHome setPage={setPage} usuario={usuario}/>,
+    home:        usuario.role==="recepcao" ? <PageHomeRecepcao setPage={setPage} usuario={usuario} pats={pats} allExames={allExames}/> : <PageHome setPage={setPage} usuario={usuario}/>,
     whatsapp:    <PageWhatsApp usuario={usuario} patsState={patsState}/>,
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
@@ -7024,24 +7282,24 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{
           display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-          height:"100vh", background:"#EBF2FB", fontFamily:"system-ui, sans-serif", padding:32
+          height:"100vh", background:"#F2E9DC", fontFamily:"system-ui, sans-serif", padding:32
         }}>
           <div style={{
-            background:"#fff", border:"1.5px solid #C8DCF0", borderRadius:16,
+            background:"#fff", border:"1.5px solid #E8D5BC", borderRadius:16,
             padding:"32px 40px", maxWidth:520, textAlign:"center",
             boxShadow:"0 4px 24px rgba(44,26,8,.08)"
           }}>
             <div style={{fontSize:48, marginBottom:16}}>⚠️</div>
-            <h2 style={{color:"#1A5FA8", fontSize:20, fontWeight:700, margin:"0 0 8px"}}>
+            <h2 style={{color:"#A8722A", fontSize:20, fontWeight:700, margin:"0 0 8px"}}>
               Erro ao carregar o CRM
             </h2>
-            <p style={{color:"#3a5070", fontSize:13, margin:"0 0 20px", lineHeight:1.6}}>
+            <p style={{color:"#7A5C3A", fontSize:13, margin:"0 0 20px", lineHeight:1.6}}>
               {String(this.state.error?.message || "Erro desconhecido")}
             </p>
             <button
               onClick={() => { this.setState({hasError:false,error:null}); window.location.reload(); }}
               style={{
-                background:"linear-gradient(135deg,#1A5FA8,#3B9DE8)",
+                background:"linear-gradient(135deg,#A8722A,#C89C62)",
                 color:"#fff", border:"none", borderRadius:9,
                 padding:"10px 24px", fontWeight:700, fontSize:14, cursor:"pointer"
               }}
@@ -7070,7 +7328,7 @@ export default function App(){
     </ErrorBoundary>
   );
 }
-// CRM Dra. Ilza Ezequiel v33 — Tema azul global, scroll em todas as páginas
+// CRM Dra. Ilza Ezequiel v34 — Dashboard Recepção, tema azul, scroll global
 
 /* ════════════════════════════════════════════════════════════════
    BRIDGE CRM ↔ PORTAL — sincronização Firebase-style via localStorage
