@@ -1043,53 +1043,38 @@ function Login({onLogin,users}){
         </Modal>
       )}
 
-      {/* ═══ TOPO: Logo grande + Foto da Dra. ═══ */}
+      {/* ═══ TOPO: Foto + Logo ═══ */}
       <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",
-        alignItems:"center",marginBottom:32,maxWidth:560,width:"100%"}}>
+        alignItems:"center",marginBottom:18,maxWidth:600,width:"100%"}}>
 
-        {/* Foto + Logo lado a lado */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:24,marginBottom:18}}>
+        {/* Foto circular + divisor + Logo grande — tudo numa linha */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:28}}>
+
           {/* Foto circular da Dra. */}
           <div style={{position:"relative",flexShrink:0}}>
-            <div style={{width:110,height:110,borderRadius:"50%",
-              background:"linear-gradient(135deg,rgba(59,157,232,.6),rgba(26,95,168,.4))",
-              padding:3,boxShadow:"0 0 0 6px rgba(59,157,232,.15),0 20px 50px rgba(0,0,0,.5)"}}>
+            <div style={{width:120,height:120,borderRadius:"50%",
+              background:"linear-gradient(135deg,rgba(59,157,232,.7),rgba(26,95,168,.5))",
+              padding:3.5,boxShadow:"0 0 0 8px rgba(59,157,232,.12),0 24px 56px rgba(0,0,0,.55)"}}>
               <img src={FOTO} alt="Dra. Ilza" style={{width:"100%",height:"100%",borderRadius:"50%",
                 objectFit:"cover",objectPosition:"center top",display:"block"}}
                 onError={e=>e.target.style.display="none"}/>
             </div>
             {/* Badge online */}
-            <div style={{position:"absolute",bottom:6,right:6,width:16,height:16,borderRadius:"50%",
-              background:"#25d366",border:"2.5px solid #0d2137",boxShadow:"0 2px 6px rgba(0,0,0,.3)"}}/>
+            <div style={{position:"absolute",bottom:7,right:7,width:17,height:17,borderRadius:"50%",
+              background:"#25d366",border:"3px solid #0d2137",boxShadow:"0 2px 8px rgba(0,0,0,.35)"}}/>
           </div>
 
           {/* Divisor vertical */}
-          <div style={{width:1,height:80,background:"rgba(255,255,255,.18)",flexShrink:0}}/>
+          <div style={{width:1,height:90,background:"linear-gradient(to bottom,transparent,rgba(255,255,255,.35),transparent)",flexShrink:0}}/>
 
-          {/* Logo maior */}
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
-            <img src={LOGO} alt="Logo Dra. Ilza" style={{height:72,maxWidth:240,objectFit:"contain",
-              filter:"brightness(0) invert(1)",opacity:.95}}
+          {/* Logo bem maior, paralelo à foto */}
+          <div style={{flexShrink:0,display:"flex",alignItems:"center"}}>
+            <img src={LOGO} alt="Logo Dra. Ilza"
+              style={{height:100,maxWidth:260,objectFit:"contain",
+                filter:"brightness(0) invert(1)",opacity:.96,
+                dropShadow:"0 4px 16px rgba(0,0,0,.4)"}}
               onError={e=>e.target.style.display="none"}/>
           </div>
-        </div>
-
-        {/* Card identificação médica */}
-        <div style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.14)",
-          borderRadius:14,padding:"12px 28px",display:"flex",flexDirection:"column",
-          alignItems:"center",gap:4,backdropFilter:"blur(8px)",
-          boxShadow:"0 4px 24px rgba(0,0,0,.2)"}}>
-          <svg width="28" height="28" viewBox="0 0 100 100" fill="none" style={{opacity:.8}}>
-            <path d="M32 22 C22 22 14 33 14 46 C14 63 22 78 36 83 C45 87 55 87 64 83 C78 78 86 63 86 46 C86 33 78 22 68 22 C63 22 60 26 57 31 C54 26 51 22 47 22 C43 22 40 25 37 29 C35 25 33 22 32 22Z" stroke="rgba(122,184,212,.9)" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <p style={{color:"rgba(180,218,240,.95)",fontSize:14,fontWeight:400,
-            letterSpacing:"0.12em",textTransform:"uppercase",margin:0,
-            fontFamily:"Georgia,serif"}}>Dra. Ilza Costa Ezequiel Neta</p>
-          <p style={{color:"rgba(122,184,212,.85)",fontSize:9,fontWeight:700,
-            letterSpacing:"0.26em",textTransform:"uppercase",margin:0}}>Gastroenterologista</p>
-          <p style={{color:"rgba(155,189,208,.65)",fontSize:8,letterSpacing:"0.14em",margin:0}}>
-            CRM SP 157236 | RQE 106877
-          </p>
         </div>
       </div>
 
