@@ -6425,6 +6425,53 @@ function PageHome({ setPage, usuario }) {
 
 // ─── Indicador de progresso sequencial ───────────────────────────────────────
 
+// ─── Componentes auxiliares da Telemedicina ───────────────────────────────────
+function TeleAvatar({ iniciais, size = 40 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      background: "linear-gradient(135deg,#1A5FA8,#3B9DE8)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: size * 0.36, fontWeight: 700, color: "#fff", letterSpacing: ".03em"
+    }}>
+      {iniciais || "?"}
+    </div>
+  );
+}
+
+function TeleBtn({ onClick, color, style = {}, children, disabled = false }) {
+  const bg = color || T.b;
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: "8px 16px", borderRadius: 9, border: "none",
+        background: disabled ? "#ccc" : bg, color: "#fff",
+        fontWeight: 700, fontSize: 13, cursor: disabled ? "default" : "pointer",
+        fontFamily: "inherit", transition: "opacity .15s", flexShrink: 0,
+        ...style
+      }}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.opacity = ".82"; }}
+      onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TeleBadge({ children }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      background: "linear-gradient(135deg,#C8972A,#E8C070)",
+      color: "#fff", fontSize: 10, fontWeight: 700,
+      padding: "2px 7px", borderRadius: 99, letterSpacing: ".04em"
+    }}>
+      ★ {children}
+    </span>
+  );
+}
 
 function SalaEspera({ onIniciar }) {
   const [fila, setFila] = useState(()=>safeLsGet("crm_fila_v25"));
