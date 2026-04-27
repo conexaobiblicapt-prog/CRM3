@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Legend,
@@ -930,7 +931,7 @@ function Modal({title,onClose,children,width=600}){
     return () => { document.body.style.overflow = prev; };
   },[]);
 
-  return(
+  return createPortal(
     <div
       onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}}
       style={{
@@ -971,7 +972,7 @@ function Modal({title,onClose,children,width=600}){
         }}>{children}</div>
       </div>
     </div>
-  );
+  , document.body);
 }
 
 /* Popup alerta de estoque crítico */
@@ -7640,7 +7641,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
         }} onClick={()=>setMobileOpen(false)} />
         <div style={{
           position:"fixed", top:0, left:0, bottom:0,
-          zIndex:999999,
+          zIndex:500,
           boxShadow:"4px 0 24px rgba(0,0,0,.4)",
           display:"flex"
         }}>
