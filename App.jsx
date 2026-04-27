@@ -930,55 +930,44 @@ function Modal({title,onClose,children,width=600}){
     return () => { document.body.style.overflow = prev; };
   },[]);
 
-  /*
-   * PADRÃO DEFINITIVO — sem barra cinza, sem corte, centralizado:
-   * Overlay scrollável → div centralizadora (minHeight:100% + flex center)
-   * → Card com altura natural → Body com maxHeight + scroll interno
-   */
   return(
     <div
       onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}}
       style={{
         position:"fixed", inset:0, zIndex:2000,
         background:"rgba(13,33,55,.65)", backdropFilter:"blur(4px)",
-        overflowY:"auto",
-        paddingLeft:"var(--sidebar-w,0px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        padding:"16px",
+        paddingLeft:"calc(var(--sidebar-w,0px) + 16px)",
       }}>
-      {/* Div de centralização: minHeight:100% + alignItems:center */}
       <div
         onMouseDown={e=>e.stopPropagation()}
         style={{
-          display:"flex", alignItems:"center", justifyContent:"center",
-          minHeight:"100%",
-          padding:"20px 16px",
-        }}>
-        {/* Card: altura natural, cresce só com conteúdo, nunca estica */}
-        <div style={{
           background:C.card, borderRadius:18,
           width:"100%",
           maxWidth:`min(${width}px, calc(100vw - var(--sidebar-w,0px) - 32px))`,
+          maxHeight:"calc(100vh - 32px)",
           display:"flex", flexDirection:"column",
           boxShadow:`0 24px 60px ${C.sh}`,
+          flexShrink:0,
         }}>
-          {/* Header */}
-          <div style={{
-            display:"flex", justifyContent:"space-between", alignItems:"center",
-            padding:"16px 20px", borderBottom:`1px solid ${C.brd}`,
-            background:C.card2, borderRadius:"18px 18px 0 0", flexShrink:0,
-          }}>
-            <p style={{color:C.tx,fontWeight:800,fontSize:15,margin:0}}>{title}</p>
-            <button onClick={onClose} style={{
-              background:"none", border:"none", color:C.txM,
-              cursor:"pointer", fontSize:20, lineHeight:1, flexShrink:0,
-            }}>✕</button>
-          </div>
-          {/* Body: scroll interno quando conteúdo excede maxHeight */}
-          <div style={{
-            padding:20,
-            overflowY:"auto",
-            maxHeight:"calc(100vh - 140px)",
-          }}>{children}</div>
+        <div style={{
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          padding:"16px 20px", borderBottom:`1px solid ${C.brd}`,
+          background:C.card2, borderRadius:"18px 18px 0 0", flexShrink:0,
+        }}>
+          <p style={{color:C.tx,fontWeight:800,fontSize:15,margin:0}}>{title}</p>
+          <button onClick={onClose} style={{
+            background:"none", border:"none", color:C.txM,
+            cursor:"pointer", fontSize:20, lineHeight:1, flexShrink:0,
+          }}>✕</button>
         </div>
+        <div style={{
+          flex:1,
+          minHeight:0,
+          overflowY:"auto",
+          padding:20,
+        }}>{children}</div>
       </div>
     </div>
   );
