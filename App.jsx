@@ -3058,16 +3058,32 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
 
 function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
   const [pacientes] = useState(()=>safeLsGet("crm_pats_v26"));
+  // ── paciente selecionado (objeto completo) ──
+  const [pacObj, setPacObj] = useState(null);
   const [pac, setPac] = useState(pacInicial);
   const [pacOpen, setPacOpen] = useState(false);
   const [pacQ, setPacQ] = useState(pacInicial);
   const pacRef = useRef();
   const pacFiltrados = pacientes.filter(p=>(p.nome||p.name||"").toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
+
+  // Preencher campos automáticos ao selecionar paciente
+  function selecionarPaciente(p) {
+    const nome = p.nome||p.name||"";
+    setPac(nome);
+    setPacQ(nome);
+    setPacObj(p);
+    setPacOpen(false);
+    // Se paciente tem data de nascimento, não auto-preenche data do exame
+    // mas podemos sugerir hoje+7 dias como data prevista padrão
+    if(!dt) setDt(new Date(Date.now()+7*86400000).toISOString().slice(0,10));
+  }
+
   useEffect(()=>{
     function h(e){ if(pacRef.current&&!pacRef.current.contains(e.target)) setPacOpen(false); }
     document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[]);
+
   const [dt, setDt] = useState("");
   const [obs, setObs] = useState("");
   const [q, setQ] = useState("");
@@ -3076,59 +3092,124 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
   const toggle = nome => setSelList(prev =>
     prev.includes(nome) ? prev.filter(x=>x!==nome) : [...prev, nome]
   );
+
+  // Campos do paciente para exibir no card
+  const pacInfo = pacObj ? [
+    pacObj.telefone && { icon:"📞", label:"Telefone", val: pacObj.telefone },
+    pacObj.whatsapp && { icon:"💬", label:"WhatsApp", val: pacObj.whatsapp },
+    pacObj.plano    && { icon:"🏥", label:"Plano",    val: pacObj.plano    },
+    pacObj.cpf      && { icon:"🪪", label:"CPF",      val: pacObj.cpf      },
+    pacObj.dn       && { icon:"🎂", label:"Nascimento",val: pacObj.dn      },
+    pacObj.obs      && { icon:"📋", label:"Obs",       val: pacObj.obs     },
+  ].filter(Boolean) : [];
+
   return (
-    <Modal title="Solicitar exames" onClose={onClose} width={540}>
+    <Modal title="Solicitar exames" onClose={onClose} width={560}>
       <Fld label="Paciente">
         <div ref={pacRef} style={{position:"relative"}}>
           <div style={{position:"relative"}}>
-            <input style={{...inp,paddingLeft:34,borderColor:pac?T.b:T.br,background:pac?T.bL:T.sur}}
-              value={pacQ} placeholder={pacientes.length===0?"Digite o nome do paciente...":"Buscar paciente cadastrado..."}
-              onChange={e=>{setPacQ(e.target.value);setPac("");setPacOpen(true);}}
-              onFocus={()=>setPacOpen(true)}/>
-            {pac&&(<div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
-              width:18,height:18,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",
-              justifyContent:"center",cursor:"pointer"}} onClick={()=>{setPac("");setPacQ("");setPacOpen(false);}}>
-              <Ic n="close" sz={10} c="#fff" sw={2.5}/></div>)}
+            <div style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+              <Ic n="search" sz={14} c={pac?T.b:T.txS}/>
+            </div>
+            <input style={{...inp,paddingLeft:34,paddingRight:36,
+              borderColor:pac?T.b:T.br, borderWidth:pac?"1.5px":"1px",
+              background:pac?T.bL:T.sur, fontWeight:pac?600:400}}
+              value={pacQ}
+              placeholder={pacientes.length===0?"Digite o nome do paciente...":"🔍  Buscar paciente cadastrado..."}
+              onChange={e=>{setPacQ(e.target.value);setPac("");setPacObj(null);setPacOpen(true);}}
+              onFocus={()=>setPacOpen(true)}
+              autoFocus
+            />
+            {pac&&(
+              <div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
+                width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",
+                justifyContent:"center",cursor:"pointer",zIndex:1}}
+                onClick={()=>{setPac("");setPacQ("");setPacObj(null);setPacOpen(false);}}>
+                <Ic n="close" sz={10} c="#fff" sw={2.5}/>
+              </div>
+            )}
           </div>
+
+          {/* ── Dropdown de resultados ── */}
           {pacOpen&&pacQ.length>0&&(
-            <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,zIndex:300,
-              background:T.sur,border:`1.5px solid ${T.br}`,borderRadius:12,
-              boxShadow:"0 8px 24px rgba(13,31,58,.12)",overflow:"hidden",maxHeight:220,overflowY:"auto"}}>
-              {pacFiltrados.length>0?pacFiltrados.map(p=>{
+            <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:9999,
+              background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,
+              boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:260,overflowY:"auto"}}>
+              {pacFiltrados.length>0 ? pacFiltrados.map(p=>{
                 const nome=p.nome||p.name||"—";
                 const ini=nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
-                return(<div key={p.id||nome} onClick={()=>{setPac(nome);setPacQ(nome);setPacOpen(false);}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:"pointer",
-                    borderBottom:`1px solid ${T.br}`,transition:"background .1s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=T.sur2}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <div style={{width:30,height:30,borderRadius:8,background:`${T.b}18`,display:"flex",
-                    alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.b,flexShrink:0}}>{ini}</div>
-                  <div><div style={{fontSize:13,fontWeight:600,color:T.tx}}>{nome}</div>
-                    {p.cpf&&<div style={{fontSize:10,color:T.txS}}>CPF: {p.cpf}</div>}</div>
-                </div>);
-              }):(
-                <div style={{padding:"12px 14px",fontSize:12,color:T.txS,textAlign:"center"}}>
-                  {pacientes.length===0?"Nenhum paciente cadastrado ainda":`Nenhum resultado para "${pacQ}"`}
-                  <div style={{marginTop:4,fontSize:11}}>Você pode digitar qualquer nome ↵</div>
+                const infos=[p.plano,p.telefone||p.whatsapp].filter(Boolean).join(" · ");
+                return(
+                  <div key={p.id||nome} onClick={()=>selecionarPaciente(p)}
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",cursor:"pointer",
+                      borderBottom:`1px solid ${T.br}`,transition:"background .12s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=T.bL}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    {/* Avatar com iniciais */}
+                    <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
+                      background:`linear-gradient(135deg,${T.b},${T.b}99)`,
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontSize:12,fontWeight:800,color:"#fff",letterSpacing:.5}}>{ini}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.tx,marginBottom:2}}>{nome}</div>
+                      {infos && <div style={{fontSize:11,color:T.txS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{infos}</div>}
+                    </div>
+                    <Ic n="chevron" sz={14} c={T.txS}/>
+                  </div>
+                );
+              }) : (
+                <div style={{padding:"16px",textAlign:"center"}}>
+                  <div style={{fontSize:13,color:T.txM,marginBottom:4}}>
+                    {pacientes.length===0?"Nenhum paciente cadastrado":`Nenhum resultado para "${pacQ}"`}
+                  </div>
+                  <div style={{fontSize:11,color:T.txS}}>Você pode continuar digitando para usar esse nome</div>
                 </div>
               )}
+              {/* Opção: usar texto livre */}
               {pacQ.trim()&&!pacFiltrados.find(p=>(p.nome||p.name||"")===pacQ.trim())&&(
-                <div onClick={()=>{setPac(pacQ.trim());setPacOpen(false);}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:"pointer",
+                <div onClick={()=>{setPac(pacQ.trim());setPacObj(null);setPacOpen(false);}}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",
                     background:T.bL,borderTop:`1px solid ${T.br}`}}
-                  onMouseEnter={e=>e.currentTarget.style.background=T.sur3}
+                  onMouseEnter={e=>e.currentTarget.style.background=`${T.b}18`}
                   onMouseLeave={e=>e.currentTarget.style.background=T.bL}>
-                  <Ic n="plus" sz={14} c={T.b}/>
-                  <span style={{fontSize:12,color:T.b,fontWeight:600}}>Usar "{pacQ.trim()}"</span>
+                  <div style={{width:28,height:28,borderRadius:8,background:`${T.b}20`,
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <Ic n="plus" sz={13} c={T.b}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700,color:T.b}}>Usar "{pacQ.trim()}"</div>
+                    <div style={{fontSize:10,color:T.txS}}>Paciente não cadastrado</div>
+                  </div>
                 </div>
               )}
             </div>
           )}
         </div>
-        {pac&&<div style={{marginTop:6,fontSize:11,color:T.gr,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:T.gr,display:"inline-block"}}/>Selecionado: <strong>{pac}</strong></div>}
+
+        {/* ── Card do paciente selecionado ── */}
+        {pacObj && pacInfo.length > 0 && (
+          <div style={{marginTop:10,borderRadius:12,border:`1.5px solid ${T.b}30`,
+            background:`linear-gradient(135deg,${T.bL},${T.sur})`,
+            padding:"12px 14px",display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.b,marginBottom:2,
+              display:"flex",alignItems:"center",gap:5}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:T.gr,display:"inline-block"}}/>
+              Dados preenchidos automaticamente
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 12px"}}>
+              {pacInfo.map(({icon,label,val})=>(
+                <div key={label} style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                  <span style={{fontSize:12}}>{icon}</span>
+                  <span style={{fontSize:10,color:T.txS,flexShrink:0}}>{label}:</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.tx,
+                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Fld>
+
       <Fld label="Data prevista">
         <input style={inp} type="date" value={dt} onChange={e=>setDt(e.target.value)} />
       </Fld>
@@ -3141,7 +3222,7 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
             onChange={e=>setQ(e.target.value)} placeholder="Filtrar exames..." />
         </div>
         <div style={{ border:`1.5px solid ${T.br}`, borderRadius:12, overflow:"hidden",
-          maxHeight:200, overflowY:"auto" }}>
+          maxHeight:260, overflowY:"auto" }}>
           {filteredE.map((e,i) => {
             const checked = selList.includes(e);
             return (
