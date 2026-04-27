@@ -936,8 +936,9 @@ function Modal({title,onClose,children,width=600}){
       style={{
         position:"fixed", inset:0, zIndex:2000,
         background:"rgba(13,33,55,.65)", backdropFilter:"blur(4px)",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        padding:"16px",
+        display:"flex", alignItems:"flex-start", justifyContent:"center",
+        overflowY:"auto",
+        padding:"32px 16px 24px",
         paddingLeft:"calc(var(--sidebar-w,0px) + 16px)",
       }}>
       <div
@@ -946,10 +947,10 @@ function Modal({title,onClose,children,width=600}){
           background:C.card, borderRadius:18,
           width:"100%",
           maxWidth:`min(${width}px, calc(100vw - var(--sidebar-w,0px) - 32px))`,
-          maxHeight:"calc(100vh - 32px)",
           display:"flex", flexDirection:"column",
           boxShadow:`0 24px 60px ${C.sh}`,
           flexShrink:0,
+          marginBottom:24,
         }}>
         <div style={{
           display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -976,7 +977,7 @@ function Modal({title,onClose,children,width=600}){
 /* Popup alerta de estoque crítico */
 function ConfirmPopup({title,msg,onYes,onNo,yesLabel="Sim, confirmar",noLabel="Cancelar",danger=false}){
   return(
-    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px"}}>
+    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"32px 16px 24px",overflowY:"auto"}}>
       <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:400,padding:28,boxShadow:"0 24px 60px rgba(0,0,0,.3)",textAlign:"center"}}>
         <div style={{width:52,height:52,borderRadius:"50%",background:danger?"rgba(192,57,43,.1)":"rgba(26,95,168,.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 14px"}}>
           {danger?"⚠️":"❓"}
@@ -1693,7 +1694,7 @@ function MemedModal({paciente,onClose,onSalvar,token}){
   }
 
   return(
-    <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.65)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 12px"}}>
+    <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.65)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"32px 12px 24px",overflowY:"auto"}}>
       <div style={{background:C.card,borderRadius:18,width:"100%",maxWidth:900,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
 
         {/* Header */}
@@ -2119,7 +2120,7 @@ function NotaFiscalModal({paciente,total,pagamentos,procs,onClose,onEmitida}){
     <Modal title={`🧾 Nota Fiscal — ${paciente.nm}`} onClose={onClose} width={620}>
       {/* Popup: NF foi enviada ao paciente? */}
       {nfEnvioPopup&&(
-    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px"}}>
+    <div onMouseDown={e=>e.stopPropagation()} style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(0,0,0,.55)",zIndex:99999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"32px 16px 24px",overflowY:"auto"}}>
           <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:420,padding:30,boxShadow:"0 24px 60px rgba(0,0,0,.3)",textAlign:"center",border:"2px solid #003399"}}>
             <div style={{width:60,height:60,borderRadius:"50%",background:"#e8f0ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🧾</div>
             <p style={{color:"#003399",fontWeight:900,fontSize:17,margin:"0 0 8px",fontFamily:"Georgia,serif"}}>Nota Fiscal Emitida!</p>
@@ -3139,7 +3140,7 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
             onChange={e=>setQ(e.target.value)} placeholder="Filtrar exames..." />
         </div>
         <div style={{ border:`1.5px solid ${T.br}`, borderRadius:12, overflow:"hidden",
-          maxHeight:260, overflowY:"auto" }}>
+          maxHeight:200, overflowY:"auto" }}>
           {filteredE.map((e,i) => {
             const checked = selList.includes(e);
             return (
@@ -3770,7 +3771,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
 
       {/* POPUP PRIORIDADE — falar com Dra */}
       {showPrioridade&&(
-        <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(13,33,55,.7)",backdropFilter:"blur(6px)",zIndex:5000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 20px"}}>
+        <div style={{position:"fixed",inset:0,paddingLeft:"var(--sidebar-w,0px)",background:"rgba(13,33,55,.7)",backdropFilter:"blur(6px)",zIndex:5000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"32px 20px 24px",overflowY:"auto"}}>
           <div style={{background:"#fff",borderRadius:20,maxWidth:480,width:"100%",overflow:"hidden",boxShadow:"0 24px 60px rgba(0,0,0,.4)"}}>
             <div style={{background:"linear-gradient(135deg,#c0392b,#e74c3c)",padding:"20px 24px",display:"flex",gap:14,alignItems:"center"}}>
               <span style={{fontSize:32}}>🚨</span>
