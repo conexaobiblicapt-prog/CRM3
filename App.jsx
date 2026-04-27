@@ -934,7 +934,7 @@ function Modal({title,onClose,children,width=600}){
     <div
       onMouseDown={e=>{e.preventDefault();if(e.target===e.currentTarget)onClose();}}
       style={{
-        position:"fixed", inset:0, zIndex:99999,
+        position:"fixed", inset:0, zIndex:999999,
         background:"rgba(13,33,55,.65)", backdropFilter:"blur(4px)",
         display:"flex", alignItems:"flex-start", justifyContent:"center",
         overflowY:"auto",
@@ -7418,7 +7418,7 @@ function PageSalaVirtual({ pats }) {
 
       {/* Modal encerrar */}
       {confirmEnc && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:300,
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:999999,
           display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
           <div style={{ background:"#fff", borderRadius:20, padding:"24px 20px", maxWidth:360, width:"100%" }}>
             <div style={{ fontSize:32, textAlign:"center", marginBottom:12 }}>✅</div>
@@ -7640,7 +7640,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
         }} onClick={()=>setMobileOpen(false)} />
         <div style={{
           position:"fixed", top:0, left:0, bottom:0,
-          zIndex:500,
+          zIndex:999999,
           boxShadow:"4px 0 24px rgba(0,0,0,.4)",
           display:"flex"
         }}>
