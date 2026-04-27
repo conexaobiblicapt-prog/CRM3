@@ -3057,8 +3057,11 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
 // ─── PAGE: PACIENTES — SEM avatar na tabela ───────────────────────────────────
 
 function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
-  const [pacientes] = useState(()=>safeLsGet("crm_pats_v26"));
-  // ── paciente selecionado (objeto completo) ──
+  // Lê pacientes direto do Firebase (polling já feito pelo CRM pai)
+  const [pacientes, setPacientes] = useState(()=>safeLsGet("crm_pats_v26"));
+  useEffect(()=>{
+    fbRead("crm_data/crm_pats_v26").then(v=>{ if(v&&Array.isArray(v)&&v.length>0) setPacientes(v); });
+  },[]);
   const [pacObj, setPacObj] = useState(null);
   const [pac, setPac] = useState(pacInicial);
   const [pacOpen, setPacOpen] = useState(false);
@@ -3066,25 +3069,17 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
   const pacRef = useRef();
   const pacFiltrados = pacientes.filter(p=>(p.nome||p.name||"").toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
 
-  // Preencher campos automáticos ao selecionar paciente
+  const [dt, setDt] = useState("");
   function selecionarPaciente(p) {
-    const nome = p.nome||p.name||"";
-    setPac(nome);
-    setPacQ(nome);
-    setPacObj(p);
-    setPacOpen(false);
-    // Se paciente tem data de nascimento, não auto-preenche data do exame
-    // mas podemos sugerir hoje+7 dias como data prevista padrão
+    const nome=p.nome||p.name||"";
+    setPac(nome); setPacQ(nome); setPacObj(p); setPacOpen(false);
     if(!dt) setDt(new Date(Date.now()+7*86400000).toISOString().slice(0,10));
   }
-
   useEffect(()=>{
     function h(e){ if(pacRef.current&&!pacRef.current.contains(e.target)) setPacOpen(false); }
     document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[]);
-
-  const [dt, setDt] = useState("");
   const [obs, setObs] = useState("");
   const [q, setQ] = useState("");
   const [selList, setSelList] = useState([]);
@@ -3092,17 +3087,13 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
   const toggle = nome => setSelList(prev =>
     prev.includes(nome) ? prev.filter(x=>x!==nome) : [...prev, nome]
   );
-
-  // Campos do paciente para exibir no card
   const pacInfo = pacObj ? [
-    pacObj.telefone && { icon:"📞", label:"Telefone", val: pacObj.telefone },
-    pacObj.whatsapp && { icon:"💬", label:"WhatsApp", val: pacObj.whatsapp },
-    pacObj.plano    && { icon:"🏥", label:"Plano",    val: pacObj.plano    },
-    pacObj.cpf      && { icon:"🪪", label:"CPF",      val: pacObj.cpf      },
-    pacObj.dn       && { icon:"🎂", label:"Nascimento",val: pacObj.dn      },
-    pacObj.obs      && { icon:"📋", label:"Obs",       val: pacObj.obs     },
+    pacObj.telefone&&{icon:"📞",label:"Telefone",val:pacObj.telefone},
+    pacObj.whatsapp&&{icon:"💬",label:"WhatsApp",val:pacObj.whatsapp},
+    pacObj.plano&&{icon:"🏥",label:"Plano",val:pacObj.plano},
+    pacObj.cpf&&{icon:"🪪",label:"CPF",val:pacObj.cpf},
+    pacObj.dn&&{icon:"🎂",label:"Nasc.",val:pacObj.dn},
   ].filter(Boolean) : [];
-
   return (
     <Modal title="Solicitar exames" onClose={onClose} width={560}>
       <Fld label="Paciente">
@@ -3112,104 +3103,78 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
               <Ic n="search" sz={14} c={pac?T.b:T.txS}/>
             </div>
             <input style={{...inp,paddingLeft:34,paddingRight:36,
-              borderColor:pac?T.b:T.br, borderWidth:pac?"1.5px":"1px",
-              background:pac?T.bL:T.sur, fontWeight:pac?600:400}}
-              value={pacQ}
-              placeholder={pacientes.length===0?"Digite o nome do paciente...":"🔍  Buscar paciente cadastrado..."}
+              borderColor:pac?T.b:T.br,borderWidth:pac?"1.5px":"1px",
+              background:pac?T.bL:T.sur,fontWeight:pac?600:400}}
+              value={pacQ} placeholder={pacientes.length===0?"Digite o nome...":"Buscar paciente..."}
               onChange={e=>{setPacQ(e.target.value);setPac("");setPacObj(null);setPacOpen(true);}}
-              onFocus={()=>setPacOpen(true)}
-              autoFocus
-            />
-            {pac&&(
-              <div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
-                width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",
-                justifyContent:"center",cursor:"pointer",zIndex:1}}
-                onClick={()=>{setPac("");setPacQ("");setPacObj(null);setPacOpen(false);}}>
-                <Ic n="close" sz={10} c="#fff" sw={2.5}/>
-              </div>
-            )}
+              onFocus={()=>setPacOpen(true)} autoFocus/>
+            {pac&&(<div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
+              width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",
+              justifyContent:"center",cursor:"pointer"}}
+              onClick={()=>{setPac("");setPacQ("");setPacObj(null);setPacOpen(false);}}>
+              <Ic n="close" sz={10} c="#fff" sw={2.5}/></div>)}
           </div>
-
-          {/* ── Dropdown de resultados ── */}
           {pacOpen&&pacQ.length>0&&(
             <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:9999,
               background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,
               boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:260,overflowY:"auto"}}>
-              {pacFiltrados.length>0 ? pacFiltrados.map(p=>{
+              {pacFiltrados.length>0?pacFiltrados.map(p=>{
                 const nome=p.nome||p.name||"—";
                 const ini=nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
-                const infos=[p.plano,p.telefone||p.whatsapp].filter(Boolean).join(" · ");
-                return(
-                  <div key={p.id||nome} onClick={()=>selecionarPaciente(p)}
-                    style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",cursor:"pointer",
-                      borderBottom:`1px solid ${T.br}`,transition:"background .12s"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=T.bL}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    {/* Avatar com iniciais */}
-                    <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
-                      background:`linear-gradient(135deg,${T.b},${T.b}99)`,
-                      display:"flex",alignItems:"center",justifyContent:"center",
-                      fontSize:12,fontWeight:800,color:"#fff",letterSpacing:.5}}>{ini}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.tx,marginBottom:2}}>{nome}</div>
-                      {infos && <div style={{fontSize:11,color:T.txS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{infos}</div>}
-                    </div>
-                    <Ic n="chevron" sz={14} c={T.txS}/>
+                const sub=[p.plano,p.telefone||p.whatsapp].filter(Boolean).join(" · ");
+                return(<div key={p.id||nome} onClick={()=>selecionarPaciente(p)}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",cursor:"pointer",
+                    borderBottom:`1px solid ${T.br}`,transition:"background .1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.bL}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
+                    background:`linear-gradient(135deg,${T.b},${T.b}99)`,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:12,fontWeight:800,color:"#fff"}}>{ini}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.tx}}>{nome}</div>
+                    {sub&&<div style={{fontSize:11,color:T.txS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
                   </div>
-                );
-              }) : (
+                </div>);
+              }):(
                 <div style={{padding:"16px",textAlign:"center"}}>
-                  <div style={{fontSize:13,color:T.txM,marginBottom:4}}>
-                    {pacientes.length===0?"Nenhum paciente cadastrado":`Nenhum resultado para "${pacQ}"`}
-                  </div>
-                  <div style={{fontSize:11,color:T.txS}}>Você pode continuar digitando para usar esse nome</div>
+                  <div style={{fontSize:13,color:T.txM}}>{pacientes.length===0?"Nenhum paciente cadastrado":`Sem resultado para "${pacQ}"`}</div>
+                  <div style={{fontSize:11,color:T.txS,marginTop:4}}>Você pode digitar para usar esse nome</div>
                 </div>
               )}
-              {/* Opção: usar texto livre */}
               {pacQ.trim()&&!pacFiltrados.find(p=>(p.nome||p.name||"")===pacQ.trim())&&(
                 <div onClick={()=>{setPac(pacQ.trim());setPacObj(null);setPacOpen(false);}}
                   style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",
                     background:T.bL,borderTop:`1px solid ${T.br}`}}
                   onMouseEnter={e=>e.currentTarget.style.background=`${T.b}18`}
                   onMouseLeave={e=>e.currentTarget.style.background=T.bL}>
-                  <div style={{width:28,height:28,borderRadius:8,background:`${T.b}20`,
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    <Ic n="plus" sz={13} c={T.b}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:700,color:T.b}}>Usar "{pacQ.trim()}"</div>
-                    <div style={{fontSize:10,color:T.txS}}>Paciente não cadastrado</div>
-                  </div>
+                  <Ic n="plus" sz={13} c={T.b}/>
+                  <div><div style={{fontSize:12,fontWeight:700,color:T.b}}>Usar "{pacQ.trim()}"</div>
+                    <div style={{fontSize:10,color:T.txS}}>Paciente não cadastrado</div></div>
                 </div>
               )}
             </div>
           )}
         </div>
-
-        {/* ── Card do paciente selecionado ── */}
-        {pacObj && pacInfo.length > 0 && (
+        {pacObj&&pacInfo.length>0&&(
           <div style={{marginTop:10,borderRadius:12,border:`1.5px solid ${T.b}30`,
-            background:`linear-gradient(135deg,${T.bL},${T.sur})`,
-            padding:"12px 14px",display:"flex",flexDirection:"column",gap:6}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.b,marginBottom:2,
-              display:"flex",alignItems:"center",gap:5}}>
+            background:`linear-gradient(135deg,${T.bL},${T.sur})`,padding:"10px 14px"}}>
+            <div style={{fontSize:10,fontWeight:700,color:T.b,marginBottom:6,display:"flex",alignItems:"center",gap:5}}>
               <span style={{width:6,height:6,borderRadius:"50%",background:T.gr,display:"inline-block"}}/>
-              Dados preenchidos automaticamente
+              Dados do paciente
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 12px"}}>
               {pacInfo.map(({icon,label,val})=>(
                 <div key={label} style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
                   <span style={{fontSize:12}}>{icon}</span>
-                  <span style={{fontSize:10,color:T.txS,flexShrink:0}}>{label}:</span>
-                  <span style={{fontSize:11,fontWeight:600,color:T.tx,
-                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</span>
+                  <span style={{fontSize:10,color:T.txS}}>{label}:</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.tx,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
       </Fld>
-
       <Fld label="Data prevista">
         <input style={inp} type="date" value={dt} onChange={e=>setDt(e.target.value)} />
       </Fld>
@@ -4309,8 +4274,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
 function PageConsultas({ usuario }) {
-  const [consultas, setConsultas] = useState(()=>safeLsGet("crm_consultas_v26"));
-  useEffect(()=>{localStorage.setItem("crm_consultas_v26",JSON.stringify(consultas));},[consultas]);
+  const [consultas, setConsultas] = useFirebaseData("crm_data/crm_consultas_v26", "crm_consultas_v26", []);
   // Escuta teleconsultas adicionadas pela aba Telemedicina em tempo real
   useEffect(()=>{
     const handler = e => {
@@ -4473,8 +4437,7 @@ const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho",
 const DIAS_PT  = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
 function PageAgenda({usuario}){
-  const [agenda,setAgenda]=useState(()=>safeLsGet("crm_agenda_v25"));
-  useEffect(()=>{localStorage.setItem("crm_agenda_v25",JSON.stringify(agenda));},[agenda]);
+  const [agenda, setAgenda] = useFirebaseData("crm_data/crm_agenda_v26", "crm_agenda_v25", []);
   const [showNew,setShowNew]=useState(false);
   const [showBloq,setShowBloq]=useState(false);
   const [selDia,setSelDia]=useState(null);
@@ -6679,8 +6642,7 @@ function TeleBadge({ children }) {
 }
 
 function SalaEspera({ onIniciar }) {
-  const [fila, setFila] = useState(()=>safeLsGet("crm_fila_v25"));
-  useEffect(()=>{localStorage.setItem("crm_fila_v25",JSON.stringify(fila));},[fila]);
+  const [fila, setFila] = useFirebaseData("crm_data/crm_fila_v25", "crm_fila_v25", []);
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
@@ -7792,46 +7754,103 @@ function Topbar({ page, usuario, onMenuToggle, isMobile }) {
 
 
 
-const SYNC_DB_URL="https://crm-dra-ilza-default-rtdb.firebaseio.com";
-const SYNC_KEYS=[
-  {ls:"crm_pats_v26",fb:"crm_data/crm_pats_v26"},
-  {ls:"crm_consultas_v26",fb:"crm_data/crm_consultas_v26"},
-  {ls:"crm_exames_v26",fb:"crm_data/crm_exames_v26"},
-  {ls:"crm_estoque_v26",fb:"crm_data/crm_estoque_v26"},
-  {ls:"crm_agenda_v26",fb:"crm_data/crm_agenda_v26"},
-  {ls:"crm_fila_v25",fb:"crm_data/crm_fila_v25"},
-];
-async function fbWrite(path,value){try{await fetch(`${SYNC_DB_URL}/${path}.json`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(value)});}catch(e){}}
-async function fbRead(path){try{const r=await fetch(`${SYNC_DB_URL}/${path}.json`);return await r.json();}catch(e){return null;}}
-function useFirebaseSync(){
-  const [syncStatus,setSyncStatus]=React.useState("idle");
-  React.useEffect(()=>{
-    let active=true;
-    async function pull(){
-      setSyncStatus("syncing");
-      let updated=false;
-      for(const k of SYNC_KEYS){
-        try{const fbVal=await fbRead(k.fb);if(!active)return;
-          if(fbVal&&Array.isArray(fbVal)&&fbVal.length>0){
-            const lsVal=safeLsGet(k.ls);
-            if(fbVal.length>=lsVal.length){localStorage.setItem(k.ls,JSON.stringify(fbVal));updated=true;}
-          }
-        }catch(e){}
+/* ═══════════════════════════════════════════════════════════════════════
+   FIREBASE — FONTE ÚNICA DE VERDADE
+   Todos os logins lêem e escrevem direto no Firebase Realtime Database.
+   localStorage é usado apenas como cache offline/fallback.
+   Polling a cada 3s garante que todos os dispositivos vejam os mesmos dados.
+═══════════════════════════════════════════════════════════════════════ */
+const FB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+
+async function fbWrite(path, value) {
+  try {
+    const r = await fetch(`${FB_URL}/${path}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+    return r.ok;
+  } catch(e) { return false; }
+}
+
+async function fbRead(path) {
+  try {
+    const r = await fetch(`${FB_URL}/${path}.json`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+// Hook que mantém um estado sincronizado com o Firebase em tempo real
+// Todos os logins que usam este hook vêem os mesmos dados
+function useFirebaseData(fbPath, lsKey, defaultValue = []) {
+  const [data, setData] = useState(() => {
+    // Inicia com cache local enquanto carrega do Firebase
+    const cached = safeLsGet(lsKey, defaultValue);
+    return Array.isArray(cached) ? cached : defaultValue;
+  });
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let lastEtag = null;
+
+    async function fetchFromFB() {
+      const val = await fbRead(fbPath);
+      if (!active) return;
+      if (val && Array.isArray(val) && val.length > 0) {
+        const str = JSON.stringify(val);
+        if (str !== lastEtag) {
+          lastEtag = str;
+          setData(val);
+          localStorage.setItem(lsKey, str);
+        }
+      } else if (val === null || (Array.isArray(val) && val.length === 0)) {
+        // Firebase vazio — envia o que está no localStorage (primeira vez)
+        const local = safeLsGet(lsKey, defaultValue);
+        if (local.length > 0) {
+          await fbWrite(fbPath, local);
+        }
       }
-      if(active){setSyncStatus("ok");if(updated)window.dispatchEvent(new Event("storage"));}
+      if (!loaded) setLoaded(true);
     }
-    async function push(){
-      setSyncStatus("syncing");
-      for(const k of SYNC_KEYS){try{await fbWrite(k.fb,safeLsGet(k.ls));}catch(e){}}
-      await fbWrite("crm_data/crm_last_sync",new Date().toISOString());
-      if(active)setSyncStatus("ok");
+
+    fetchFromFB();
+    const id = setInterval(fetchFromFB, 3000); // polling 3s — todos sincronizados
+    return () => { active = false; clearInterval(id); };
+  }, [fbPath, lsKey]);
+
+  // Função para salvar — escreve no Firebase E no estado local simultaneamente
+  const save = useCallback(async (updater) => {
+    setData(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      // Salva no Firebase de forma assíncrona
+      fbWrite(fbPath, next);
+      // Cache local imediato
+      localStorage.setItem(lsKey, JSON.stringify(next));
+      return next;
+    });
+  }, [fbPath, lsKey]);
+
+  return [data, save, loaded];
+}
+
+// Status global de conexão com Firebase
+function useFirebaseSync() {
+  const [syncStatus, setSyncStatus] = React.useState("syncing");
+  React.useEffect(() => {
+    let active = true;
+    async function check() {
+      const ok = await fbRead("crm_data/crm_last_sync");
+      if (!active) return;
+      // Grava timestamp para indicar que este cliente está online
+      await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
+      setSyncStatus("ok");
     }
-    pull().then(()=>push());
-    const id=setInterval(push,15000);
-    const onS=()=>{if(active)push();};
-    window.addEventListener("storage",onS);
-    return()=>{active=false;clearInterval(id);window.removeEventListener("storage",onS);};
-  },[]);
+    check();
+    const id = setInterval(check, 15000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
   return syncStatus;
 }
 
@@ -7842,9 +7861,9 @@ function CRM({usuario,onLogout,users,setUsers}){
   const [mobileOpen, setMobileOpen] = useState(false);
   // Fecha sidebar ao trocar de página no mobile
   const setPageAndClose = (p) => { setPage(p); if(isMobile) setMobileOpen(false); };
-  const [pats,setPats]=useState(()=>{ const r=safeLsGet("crm_pats_v26"); return Array.isArray(r)?r:[]; });
-  // Persiste pacientes no localStorage a cada alteracao
-  useEffect(()=>{ localStorage.setItem("crm_pats_v26", JSON.stringify(pats)); },[pats]);
+  // ── Dados em tempo real do Firebase — todos os logins sincronizados ──
+  const [pats, setPats, patsLoaded]           = useFirebaseData("crm_data/crm_pats_v26",      "crm_pats_v26",      []);
+  const [allExamesRaw, setAllExamesRaw, exLoaded] = useFirebaseData("crm_data/crm_exames_v26","crm_exames_v26",    []);
   const patsState=[pats,setPats];
   // Fila prioridade
   const [filaPrioridadeVis,setFilaPrioridadeVis]=useState(false);
@@ -7854,8 +7873,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     const w = isMobile ? 0 : (col ? 62 : 230);
     document.documentElement.style.setProperty('--sidebar-w', w+'px');
   },[col, isMobile]);
-  const [estoqueItens,setEstoqueItens]=useState(()=>{ const r=safeLsGet("crm_estoque_v26"); return Array.isArray(r)?r:[]; });
-  useEffect(()=>{localStorage.setItem("crm_estoque_v26",JSON.stringify(estoqueItens));},[estoqueItens]);
+  const [estoqueItens, setEstoqueItens] = useFirebaseData("crm_data/crm_estoque_v26", "crm_estoque_v26", []);
   const [alertasDismissed,setAlertasDismissed]=useState([]);
   const [showSair,setShowSair]=useState(false);   // ← popup confirmação sair
 
@@ -7899,9 +7917,9 @@ function CRM({usuario,onLogout,users,setUsers}){
   const estoqueState=[estoqueItens,setEstoqueItens];
 
   // useMemo evita recriar os componentes de pagina a cada render
-  const [allExames, setAllExames] = useState(()=>{ const r=safeLsGet("crm_exames_v26"); return Array.isArray(r)?r:[]; });
+  const allExames = allExamesRaw;
+  const setAllExames = setAllExamesRaw;
   const [pacFiltro, setPacFiltro] = useState(null);
-  useEffect(()=>{ localStorage.setItem("crm_exames_v26",JSON.stringify(allExames)); },[allExames]);
 
   const pages = useMemo(() => ({
     home:        usuario.role==="recepcao" ? <PageHomeRecepcao setPage={setPage} usuario={usuario} pats={pats} allExames={allExames}/> : <PageHome setPage={setPage} usuario={usuario}/>,
