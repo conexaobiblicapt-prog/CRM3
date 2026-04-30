@@ -7979,22 +7979,6 @@ function PageSalaVirtual({ pats }) {
         <div ref={bottomRef}/>
       </div>
 
-      {/* Input */}
-      <div style={{ padding:"14px 24px", background:T.sur, borderTop:`1px solid ${T.br}`,
-        display:"flex", gap:10, alignItems:"flex-end", flexShrink:0 }}>
-        <textarea ref={inputRef} value={texto} onChange={e=>setTexto(e.target.value)}
-          onKeyDown={onKey}
-          placeholder={`Escrever para ${selPac?.nm.split(" ")[0]}… (Enter para enviar)`}
-          rows={1}
-          style={{ ...inp, flex:1, resize:"none", lineHeight:1.5,
-            paddingTop:10, paddingBottom:10, maxHeight:100, overflowY:"auto" }}/>
-        <button onClick={enviar} disabled={!texto.trim()}
-          style={{ width:42, height:42, borderRadius:11, border:"none",
-            cursor:texto.trim()?"pointer":"not-allowed",
-            background:texto.trim()?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur2,
-            display:"flex", alignItems:"center", justifyContent:"center",
-            boxShadow:texto.trim()?"0 4px 14px rgba(168,114,42,.35)":"none",
-            transition:"all .15s", flexShrink:0 }}>
       {/* Input area com anexo */}
       <div style={{ padding:"12px 24px 16px", background:T.sur, borderTop:`1px solid ${T.br}`, flexShrink:0 }}>
         {anexo && (
