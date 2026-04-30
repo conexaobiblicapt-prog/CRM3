@@ -3240,6 +3240,184 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
 
 // ─── PAGE: EXAMES — SEM avatar de paciente nos cards ─────────────────────────
 
+// ─── Sub-componentes de linha/card (hooks devem estar fora de .map()) ────────
+
+function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
+  const [tip, setTip] = useState(false);
+  const [pos, setPos] = useState({ x:0, y:0 });
+  const role = usuario?.role ?? window._crmUsuario?.role;
+  return (
+    <div onClick={onOpen}
+      style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr .4fr",
+        padding:"13px 22px", gap:8, alignItems:"center",
+        borderBottom:i<total-1?`1px solid ${T.br}`:"none",
+        cursor:"pointer", transition:"background .12s, border-left .12s",
+        borderLeft:"3px solid transparent", position:"relative" }}
+      onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; setTip(true); const r=e.currentTarget.getBoundingClientRect(); setPos({x:r.left,y:r.top}); }}
+      onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderLeftColor="transparent"; setTip(false); }}>
+      <div>
+        <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}</div>
+        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Último acesso: {p.ults}</div>
+      </div>
+      <span style={{ fontSize:12, color:T.txM }}>{p.nasc}</span>
+      <span style={{ fontSize:12, color:T.txM }}>{p.tel}</span>
+      <span style={{ fontSize:12, color:T.txM }}>{p.plano}</span>
+      {stBadge(p.st)}
+      <span style={{ display:"inline-flex", width:24, height:24, borderRadius:7,
+        alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800,
+        color:p.abc?abcColor[p.abc]:T.txS,
+        background:p.abc?(p.abc==="A"?T.grB:p.abc==="B"?T.bL:T.sur2):T.sur2 }}>
+        {p.abc||"—"}
+      </span>
+      {["admin","medico"].includes(role) && (
+        <button onClick={e=>{ e.stopPropagation(); if(window.confirm(`Excluir ${p.nm}?`)) onDelete(); }}
+          style={{ width:24, height:24, borderRadius:6, border:"none", background:T.reB,
+            color:T.re, cursor:"pointer", fontSize:13, display:"inline-flex",
+            alignItems:"center", justifyContent:"center", flexShrink:0 }}
+          title="Excluir paciente">✕</button>
+      )}
+      {tip && createPortal(
+        <div style={{ position:"fixed", left:Math.max(8,pos.x), top:Math.min(pos.y-10,window.innerHeight-220),
+          zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
+          padding:"12px 16px", minWidth:200, maxWidth:280, pointerEvents:"none",
+          boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6,
+          transform:"translateY(-100%)" }}>
+          <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{p.nm}</div>
+          <div>📅 Nasc: <strong>{p.nasc||"—"}</strong></div>
+          <div>📞 Tel: <strong>{p.tel||"—"}</strong></div>
+          <div>💊 Plano: <strong>{p.plano||"—"}</strong></div>
+          <div>🏷 Status: <strong>{p.st||"—"}</strong></div>
+          {p.obs && <div style={{marginTop:6,color:"#aec9e8",fontSize:11}}>📝 {p.obs}</div>}
+          <div style={{ marginTop:6, fontSize:10, opacity:.6 }}>Clique para abrir prontuário</div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function ExameCard({ e, usuario, onDelete }) {
+  const [tip, setTip] = useState(false);
+  const [pos, setPos] = useState({ x:0, y:0 });
+  const { c:ac, bg:abg } = examAccent(e.tipo);
+  const role = usuario?.role ?? window._crmUsuario?.role;
+  return (
+    <div style={{ background:T.sur, border:`1px solid ${T.br}`,
+      borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer", position:"relative" }}
+      onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; setTip(true); const r=el.currentTarget.getBoundingClientRect(); setPos({x:r.left,y:r.top}); }}
+      onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; setTip(false); }}>
+      <div style={{ height:4, background:`linear-gradient(90deg,${ac},${ac}55)` }} />
+      <div style={{ padding:"16px 18px" }}>
+        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10, marginBottom:10 }}>
+          <div style={{ width:38, height:38, borderRadius:10, background:abg,
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <Ic n="exam" sz={18} c={ac} />
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            {stBadge(e.st)}
+            {["admin","medico"].includes(role) && (
+              <button onClick={ev=>{ ev.stopPropagation(); if(window.confirm(`Excluir exame "${e.tipo}" de ${e.pac}?`)) onDelete(); }}
+                style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
+                  color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
+                  alignItems:"center", justifyContent:"center" }}
+                title="Excluir exame">✕</button>
+            )}
+          </div>
+        </div>
+        <div style={{ fontSize:13, fontWeight:700, color:T.tx, marginBottom:5, lineHeight:1.4 }}>{e.tipo}</div>
+        <div style={{ fontSize:12, color:T.txM, marginBottom:8, fontWeight:500 }}>{e.pac}</div>
+        <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:T.txS }}>
+          <Ic n="cal" sz={12} c={T.txS} />
+          <span>{e.dt}</span>
+          {e.obs && <><span>·</span><span style={{ color:T.txM, fontStyle:"italic", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.obs}</span></>}
+        </div>
+      </div>
+      {tip && createPortal(
+        <div style={{ position:"fixed", left:Math.max(8,pos.x), top:Math.min(pos.y-10,window.innerHeight-200),
+          zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
+          padding:"12px 16px", minWidth:210, maxWidth:280, pointerEvents:"none",
+          boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6,
+          transform:"translateY(-100%)" }}>
+          <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{e.tipo}</div>
+          <div>👤 Paciente: <strong>{e.pac}</strong></div>
+          <div>📅 Data: <strong>{e.dt}</strong></div>
+          <div>📊 Status: <strong>{e.st}</strong></div>
+          {e.obs && <div>📝 Obs: <strong>{e.obs}</strong></div>}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function ConsultaRow({ c, usuario, onChangeStatus, onDelete }) {
+  const [tip, setTip] = useState(false);
+  const [pos, setPos] = useState({ x:0, y:0 });
+  const role = usuario?.role ?? window._crmUsuario?.role;
+  return (
+    <div style={{ background:T.sur, border:`1px solid ${T.br}`,
+      borderRadius:14, padding:"14px 18px", display:"flex", alignItems:"center", gap:14,
+      transition:"all .18s", position:"relative", cursor:"pointer" }}
+      onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 8px 28px rgba(44,26,8,.1)"; e.currentTarget.style.borderColor=T.b+"45"; setTip(true); const r=e.currentTarget.getBoundingClientRect(); setPos({x:r.left,y:r.top}); }}
+      onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; e.currentTarget.style.borderColor=T.br; setTip(false); }}>
+      <div style={{ textAlign:"center", flexShrink:0, width:48 }}>
+        <div style={{ fontSize:20, fontWeight:800, color:T.b, lineHeight:1 }}>{c.hr}</div>
+        <div style={{ fontSize:9, color:T.txS, marginTop:2, letterSpacing:".07em", textTransform:"uppercase" }}>hora</div>
+      </div>
+      <div style={{ width:1, height:40, background:T.br, flexShrink:0 }} />
+      <div style={{ width:38, height:38, borderRadius:10, flexShrink:0,
+        background:c.tipo==="Teleconsulta"?T.grB:T.bL,
+        display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <Ic n={c.tipo==="Teleconsulta"?"video":"users"} sz={17} c={c.tipo==="Teleconsulta"?T.gr:T.b} />
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:T.tx, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.pac}</div>
+        <div style={{ fontSize:12, color:T.txM, marginTop:2 }}>
+          {c.proc}
+          <span style={{ color:c.tipo==="Teleconsulta"?T.gr:T.b, fontWeight:500, marginLeft:6 }}>· {c.tipo}</span>
+        </div>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6, flexShrink:0 }}>
+        {stBadge(c.st)}
+        <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+          {["Confirmado","Aguardando","Cancelado"].filter(s=>s!==c.st).map(ns=>(
+            <button key={ns} onClick={()=>onChangeStatus(ns)}
+              style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                border:`1px solid ${T.br}`, background:T.sur2, color:T.txM,
+                cursor:"pointer", fontFamily:"inherit", transition:"all .12s" }}
+              onMouseEnter={e=>{ e.currentTarget.style.background=T.bL; e.currentTarget.style.color=T.b; e.currentTarget.style.borderColor=T.b+"50"; }}
+              onMouseLeave={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.color=T.txM; e.currentTarget.style.borderColor=T.br; }}>
+              → {ns}
+            </button>
+          ))}
+          {["admin","medico"].includes(role) && (
+            <button onClick={()=>{ if(window.confirm(`Excluir consulta de ${c.pac}?`)) onDelete(); }}
+              style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
+                color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
+                alignItems:"center", justifyContent:"center" }}>✕</button>
+          )}
+        </div>
+      </div>
+      {tip && createPortal(
+        <div style={{ position:"fixed", left:Math.max(8,pos.x), top:Math.min(pos.y-10,window.innerHeight-220),
+          zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
+          padding:"12px 16px", minWidth:220, maxWidth:290, pointerEvents:"none",
+          boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6,
+          transform:"translateY(-100%)" }}>
+          <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{c.pac}</div>
+          <div>🕐 Horário: <strong>{c.hr}</strong></div>
+          <div>🏥 Procedimento: <strong>{c.proc}</strong></div>
+          <div>📋 Tipo: <strong>{c.tipo}</strong></div>
+          <div>✅ Status: <strong>{c.st}</strong></div>
+          {c.obs && <div>📝 Obs: <strong>{c.obs}</strong></div>}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAllExames, setPage, setPacFiltro }) {
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -3306,59 +3484,12 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
             Nenhum paciente encontrado
           </div>
         )}
-        {filtered.map((p,i) => {
-          const [showTip, setShowTip] = useState(false);
-          const [tipPos, setTipPos] = useState({x:0,y:0});
-          return (
-          <div key={p.id} onClick={()=>setSelPac(p)}
-            style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr .4fr",
-              padding:"13px 22px", gap:8, alignItems:"center",
-              borderBottom:i<filtered.length-1?`1px solid ${T.br}`:"none",
-              cursor:"pointer", transition:"background .12s, border-left .12s",
-              borderLeft:"3px solid transparent", position:"relative" }}
-            onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; setShowTip(true); const r=e.currentTarget.getBoundingClientRect(); setTipPos({x:r.left,y:r.top}); }}
-            onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderLeftColor="transparent"; setShowTip(false); }}>
-            <div>
-              <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}</div>
-              <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Último acesso: {p.ults}</div>
-            </div>
-            <span style={{ fontSize:12, color:T.txM }}>{p.nasc}</span>
-            <span style={{ fontSize:12, color:T.txM }}>{p.tel}</span>
-            <span style={{ fontSize:12, color:T.txM }}>{p.plano}</span>
-            {stBadge(p.st)}
-            <span style={{ display:"inline-flex", width:24, height:24, borderRadius:7,
-              alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800,
-              color:p.abc?abcColor[p.abc]:T.txS,
-              background:p.abc?(p.abc==="A"?T.grB:p.abc==="B"?T.bL:T.sur2):T.sur2 }}>
-              {p.abc||"—"}
-            </span>
-            {["admin","medico"].includes(usuario?.role ?? window._crmUsuario?.role) && (
-              <button onClick={e=>{ e.stopPropagation(); if(window.confirm(`Excluir ${p.nm}?`)) setPats(prev=>prev.filter(x=>x.id!==p.id)); }}
-                style={{ width:24, height:24, borderRadius:6, border:"none", background:T.reB,
-                  color:T.re, cursor:"pointer", fontSize:13, display:"inline-flex",
-                  alignItems:"center", justifyContent:"center", flexShrink:0 }}
-                title="Excluir paciente">✕</button>
-            )}
-            {/* Tooltip hover */}
-            {showTip && createPortal(
-              <div style={{ position:"fixed", left: Math.max(8, tipPos.x), top:Math.min(tipPos.y - 10, window.innerHeight-220),
-                zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
-                padding:"12px 16px", minWidth:200, maxWidth:280, pointerEvents:"none",
-                boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6,
-                transform:"translateY(-100%)" }}>
-                <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{p.nm}</div>
-                <div>📅 Nasc: <strong>{p.nasc||"—"}</strong></div>
-                <div>📞 Tel: <strong>{p.tel||"—"}</strong></div>
-                <div>💊 Plano: <strong>{p.plano||"—"}</strong></div>
-                <div>🏷 Status: <strong>{p.st||"—"}</strong></div>
-                {p.obs&&<div style={{marginTop:6,color:"#aec9e8",fontSize:11}}>📝 {p.obs}</div>}
-                <div style={{ marginTop:6, fontSize:10, opacity:.6 }}>Clique para abrir prontuário</div>
-              </div>,
-              document.body
-            )}
-          </div>
-          );
-        })}
+        {filtered.map((p,i) => (
+          <PatRow key={p.id} p={p} i={i} total={filtered.length}
+            usuario={usuario} abcColor={abcColor}
+            onOpen={()=>setSelPac(p)}
+            onDelete={()=>setPats(prev=>prev.filter(x=>x.id!==p.id))} />
+        ))}
       </div>
 
       {showNew && (
@@ -3771,60 +3902,10 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
       )}
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(268px,1fr))", gap:14 }}>
-        {filtered.map(e => {
-          const { c:ac, bg:abg } = examAccent(e.tipo);
-          const [showTipE, setShowTipE] = useState(false);
-          const [tipPosE, setTipPosE] = useState({x:0,y:0});
-          return (
-            <div key={e.id} style={{ background:T.sur, border:`1px solid ${T.br}`,
-              borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer", position:"relative" }}
-              onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; setShowTipE(true); const r=el.currentTarget.getBoundingClientRect(); setTipPosE({x:r.right+8,y:r.top}); }}
-              onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; setShowTipE(false); }}>
-              <div style={{ height:4, background:`linear-gradient(90deg,${ac},${ac}55)` }} />
-              <div style={{ padding:"16px 18px" }}>
-                <div style={{ display:"flex", alignItems:"flex-start",
-                  justifyContent:"space-between", gap:10, marginBottom:10 }}>
-                  <div style={{ width:38, height:38, borderRadius:10, background:abg,
-                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                    <Ic n="exam" sz={18} c={ac} />
-                  </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    {stBadge(e.st)}
-                    {["admin","medico"].includes(usuario?.role ?? window._crmUsuario?.role) && (
-                      <button onClick={ev=>{ ev.stopPropagation(); if(window.confirm(`Excluir exame "${e.tipo}" de ${e.pac}?`)) setExames(p=>p.filter(x=>x.id!==e.id)); }}
-                        style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
-                          color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
-                          alignItems:"center", justifyContent:"center" }}
-                        title="Excluir exame">✕</button>
-                    )}
-                  </div>
-                </div>
-                <div style={{ fontSize:13, fontWeight:700, color:T.tx,
-                  marginBottom:5, lineHeight:1.4 }}>{e.tipo}</div>
-                <div style={{ fontSize:12, color:T.txM, marginBottom:8, fontWeight:500 }}>{e.pac}</div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:T.txS }}>
-                  <Ic n="cal" sz={12} c={T.txS} />
-                  <span>{e.dt}</span>
-                  {e.obs && <><span>·</span><span style={{ color:T.txM, fontStyle:"italic",
-                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.obs}</span></>}
-                </div>
-              </div>
-              {showTipE && createPortal(
-                <div style={{ position:"fixed", left:Math.min(tipPosE.x, window.innerWidth-260), top:Math.min(tipPosE.y, window.innerHeight-200),
-                  zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
-                  padding:"12px 16px", minWidth:210, maxWidth:280, pointerEvents:"none",
-                  boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6 }}>
-                  <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{e.tipo}</div>
-                  <div>👤 Paciente: <strong>{e.pac}</strong></div>
-                  <div>📅 Data: <strong>{e.dt}</strong></div>
-                  <div>📊 Status: <strong>{e.st}</strong></div>
-                  {e.obs&&<div>📝 Obs: <strong>{e.obs}</strong></div>}
-                </div>,
-                document.body
-              )}
-            </div>
-          );
-        })}
+        {filtered.map(e => (
+          <ExameCard key={e.id} e={e} usuario={usuario}
+            onDelete={()=>setExames(p=>p.filter(x=>x.id!==e.id))} />
+        ))}
         {/* Add card */}
         <div onClick={()=>setShowNew(true)}
           style={{ background:"transparent", border:`2px dashed ${T.brD}`, borderRadius:16,
@@ -4737,79 +4818,11 @@ function PageConsultas({ usuario }) {
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:8, marginLeft:22,
             borderLeft:`2px solid ${T.br}`, paddingLeft:26, marginBottom:24 }}>
-            {byDate[dt].map(c => {
-              const [showTipC, setShowTipC] = useState(false);
-              const [tipPosC, setTipPosC] = useState({x:0,y:0});
-              return (
-              <div key={c.id} style={{ background:T.sur, border:`1px solid ${T.br}`,
-                borderRadius:14, padding:"14px 18px", display:"flex", alignItems:"center", gap:14,
-                transition:"all .18s", position:"relative", cursor:"pointer" }}
-                onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 8px 28px rgba(44,26,8,.1)"; e.currentTarget.style.borderColor=T.b+"45"; setShowTipC(true); const r=e.currentTarget.getBoundingClientRect(); setTipPosC({x:r.right+8,y:r.top}); }}
-                onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; e.currentTarget.style.borderColor=T.br; setShowTipC(false); }}>
-                {/* horário */}
-                <div style={{ textAlign:"center", flexShrink:0, width:48 }}>
-                  <div style={{ fontSize:20, fontWeight:800, color:T.b, lineHeight:1 }}>{c.hr}</div>
-                  <div style={{ fontSize:9, color:T.txS, marginTop:2, letterSpacing:".07em",
-                    textTransform:"uppercase" }}>hora</div>
-                </div>
-                <div style={{ width:1, height:40, background:T.br, flexShrink:0 }} />
-                <div style={{ width:38, height:38, borderRadius:10, flexShrink:0,
-                  background:c.tipo==="Teleconsulta"?T.grB:T.bL,
-                  display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <Ic n={c.tipo==="Teleconsulta"?"video":"users"} sz={17}
-                    c={c.tipo==="Teleconsulta"?T.gr:T.b} />
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:T.tx,
-                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.pac}</div>
-                  <div style={{ fontSize:12, color:T.txM, marginTop:2 }}>
-                    {c.proc}
-                    <span style={{ color:c.tipo==="Teleconsulta"?T.gr:T.b, fontWeight:500, marginLeft:6 }}>
-                      · {c.tipo}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6, flexShrink:0 }}>
-                  {stBadge(c.st)}
-                  <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-                    {["Confirmado","Aguardando","Cancelado"].filter(s=>s!==c.st).map(ns => (
-                      <button key={ns}
-                        onClick={()=>setConsultas(p=>p.map(x=>x.id===c.id?{...x,st:ns}:x))}
-                        style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99,
-                          border:`1px solid ${T.br}`, background:T.sur2, color:T.txM,
-                          cursor:"pointer", fontFamily:"inherit", transition:"all .12s" }}
-                        onMouseEnter={e=>{ e.currentTarget.style.background=T.bL; e.currentTarget.style.color=T.b; e.currentTarget.style.borderColor=T.b+"50"; }}
-                        onMouseLeave={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.color=T.txM; e.currentTarget.style.borderColor=T.br; }}>
-                        → {ns}
-                      </button>
-                    ))}
-                    {["admin","medico"].includes(usuario?.role ?? window._crmUsuario?.role) && (
-                      <button onClick={()=>{ if(window.confirm(`Excluir consulta de ${c.pac}?`)) setConsultas(p=>p.filter(x=>x.id!==c.id)); }}
-                        style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
-                          color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
-                          alignItems:"center", justifyContent:"center" }}
-                        title="Excluir consulta">✕</button>
-                    )}
-                  </div>
-                </div>
-                {/* Tooltip */}
-                {showTipC && createPortal(
-                  <div style={{ position:"fixed", left:Math.min(tipPosC.x, window.innerWidth-260), top:Math.min(tipPosC.y, window.innerHeight-220),
-                    zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
-                    padding:"12px 16px", minWidth:220, maxWidth:290, pointerEvents:"none",
-                    boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6 }}>
-                    <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{c.pac}</div>
-                    <div>🕐 Horário: <strong>{c.hr}</strong></div>
-                    <div>🏥 Procedimento: <strong>{c.proc}</strong></div>
-                    <div>📋 Tipo: <strong>{c.tipo}</strong></div>
-                    <div>✅ Status: <strong>{c.st}</strong></div>
-                    {c.obs&&<div>📝 Obs: <strong>{c.obs}</strong></div>}
-                  </div>,
-                  document.body
-                )}
-              </div>
-              );
-            })}
+            {byDate[dt].map(c => (
+              <ConsultaRow key={c.id} c={c} usuario={usuario}
+                onChangeStatus={ns=>setConsultas(p=>p.map(x=>x.id===c.id?{...x,st:ns}:x))}
+                onDelete={()=>setConsultas(p=>p.filter(x=>x.id!==c.id))} />
+            ))}
           </div>
         </div>
       ))}
