@@ -3241,7 +3241,6 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
 // ─── PAGE: EXAMES — SEM avatar de paciente nos cards ─────────────────────────
 
 function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAllExames, setPage, setPacFiltro }) {
-  // pats/setPats from CRM parent via props
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [selPac, setSelPac] = useState(null);
@@ -3250,6 +3249,14 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
     p.tel.includes(q) || p.plano.toLowerCase().includes(q.toLowerCase())
   );
   const abcColor = { A:T.gr, B:T.b, C:T.txM };
+
+  // Ficha aberta em full-page
+  if (selPac) return (
+    <FichaPacientePage pac={selPac} onClose={()=>setSelPac(null)}
+      allExames={allExames} onSaveExame={novo=>setAllExames(p=>[novo,...p])}
+      setPage={setPage} setPacFiltro={setPacFiltro}
+      onUpdatePac={updated=>setPats(prev=>prev.map(p=>p.id===updated.id?updated:p))} />
+  );
 
   return (
     <div className="page" style={{ padding:"24px 28px 48px", display:"flex", flexDirection:"column", gap:20 }}>
@@ -3309,7 +3316,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
               borderBottom:i<filtered.length-1?`1px solid ${T.br}`:"none",
               cursor:"pointer", transition:"background .12s, border-left .12s",
               borderLeft:"3px solid transparent", position:"relative" }}
-            onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; setShowTip(true); const r=e.currentTarget.getBoundingClientRect(); setTipPos({x:r.right+8,y:r.top}); }}
+            onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; setShowTip(true); const r=e.currentTarget.getBoundingClientRect(); setTipPos({x:r.left,y:r.top}); }}
             onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderLeftColor="transparent"; setShowTip(false); }}>
             <div>
               <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}</div>
@@ -3334,10 +3341,11 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
             )}
             {/* Tooltip hover */}
             {showTip && createPortal(
-              <div style={{ position:"fixed", left:tipPos.x, top:Math.min(tipPos.y, window.innerHeight-200),
+              <div style={{ position:"fixed", left: Math.max(8, tipPos.x), top:Math.min(tipPos.y - 10, window.innerHeight-220),
                 zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
                 padding:"12px 16px", minWidth:200, maxWidth:280, pointerEvents:"none",
-                boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6 }}>
+                boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6,
+                transform:"translateY(-100%)" }}>
                 <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{p.nm}</div>
                 <div>📅 Nasc: <strong>{p.nasc||"—"}</strong></div>
                 <div>📞 Tel: <strong>{p.tel||"—"}</strong></div>
@@ -3361,11 +3369,350 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
           onSaveExame={novo=>setAllExames(p=>[novo,...p])}
         />
       )}
-      {selPac && (
-        <PopupPaciente pac={selPac} onClose={()=>setSelPac(null)}
-          allExames={allExames}
-          onSaveExame={novo=>setAllExames(p=>[novo,...p])}
-          setPage={setPage} setPacFiltro={setPacFiltro} />
+    </div>
+  );
+}
+
+// ─── Ficha Completa do Paciente (página inteira, estilo imagem 3) ──────────────
+function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, onUpdatePac }) {
+  const [tab, setTab]               = useState("anamneses");
+  const [anamneses, setAnamneses]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem("anamneses_"+pac.id)||"[]"); } catch(e){return[];}
+  });
+  const [atestados, setAtestados]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem("atestados_"+pac.id)||"[]"); } catch(e){return[];}
+  });
+  const [showAddAnam, setShowAddAnam] = useState(false);
+  const [showAddAtest, setShowAddAtest] = useState(false);
+  const [anamForm, setAnamForm] = useState({ titulo:"Anamnese inicial - Caixa de Texto", texto:"" });
+  const [atestForm, setAtestForm] = useState({ dias:"1", motivo:"", obs:"" });
+  const meusExames = allExames.filter(e=>e.pac===pac.nm);
+
+  function saveAnamnese() {
+    if(!anamForm.texto.trim()){alert("Preencha o texto da anamnese");return;}
+    const novo = {
+      id:"an"+Date.now(),
+      titulo: anamForm.titulo,
+      texto: anamForm.texto,
+      profissional:"Ilza Ezequiel (Ilza Costa Ezequiel Neta)",
+      dt: new Date().toLocaleString("pt-BR"),
+      dtNum: Date.now(),
+    };
+    const atualizado = [novo, ...anamneses];
+    setAnamneses(atualizado);
+    localStorage.setItem("anamneses_"+pac.id, JSON.stringify(atualizado));
+    setAnamForm({ titulo:"Anamnese inicial - Caixa de Texto", texto:"" });
+    setShowAddAnam(false);
+  }
+
+  function saveAtestado() {
+    if(!atestForm.motivo.trim()){alert("Preencha o motivo do atestado");return;}
+    const novo = {
+      id:"at"+Date.now(),
+      dias: atestForm.dias,
+      motivo: atestForm.motivo,
+      obs: atestForm.obs,
+      profissional:"Dra. Ilza Costa Ezequiel Neta",
+      dt: new Date().toLocaleString("pt-BR"),
+      dtNum: Date.now(),
+    };
+    const atualizado = [novo, ...atestados];
+    setAtestados(atualizado);
+    localStorage.setItem("atestados_"+pac.id, JSON.stringify(atualizado));
+    setAtestForm({ dias:"1", motivo:"", obs:"" });
+    setShowAddAtest(false);
+  }
+
+  function imprimirAtestado(a) {
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Atestado Médico</title>
+    <style>body{font-family:Arial,sans-serif;margin:40px;color:#1a1a1a}
+    .header{text-align:center;border-bottom:2px solid #0d2137;padding-bottom:16px;margin-bottom:24px}
+    .title{font-size:22px;font-weight:bold;color:#0d2137;margin:8px 0}
+    h3{color:#0d2137}.content{line-height:2;font-size:15px}
+    .assinatura{margin-top:60px;text-align:center;border-top:1px solid #999;padding-top:10px}</style>
+    </head><body>
+    <div class="header"><div class="title">ATESTADO MÉDICO</div>
+    <div>Dra. Ilza Costa Ezequiel Neta · CRM-SP 157236</div>
+    <div>Gastroenterologista · Santos, SP</div></div>
+    <div class="content">
+    <p>Atesto que o(a) paciente <strong>${pac.nm}</strong> esteve sob minha consulta médica
+    e necessita de afastamento de suas atividades por <strong>${a.dias} dia(s)</strong>,
+    a partir da data de emissão deste documento.</p>
+    <p><strong>Motivo:</strong> ${a.motivo}</p>
+    ${a.obs?`<p><strong>Observações:</strong> ${a.obs}</p>`:''}
+    <p><strong>Data de emissão:</strong> ${a.dt}</p>
+    </div>
+    <div class="assinatura">
+    <p>___________________________________</p>
+    <p><strong>Dra. Ilza Costa Ezequiel Neta</strong></p>
+    <p>CRM-SP 157236 · Gastroenterologista</p></div>
+    </body></html>`;
+    const w = window.open("","_blank");
+    w.document.write(html);
+    w.document.close();
+    w.print();
+  }
+
+  const tabs = [
+    { key:"anamneses", label:`Anamneses (${anamneses.length})`, icon:"📋" },
+    { key:"atestado",  label:`Atestados (${atestados.length})`,  icon:"📄" },
+    { key:"exames",    label:`Exames (${meusExames.length})`,    icon:"🔬" },
+    { key:"info",      label:"Informações",                      icon:"👤" },
+  ];
+
+  const initials = pac.nm.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
+
+  return (
+    <div style={{ padding:"0 0 48px", display:"flex", flexDirection:"column", gap:0, minHeight:"100%" }}>
+      {/* Header estilo imagem 3 */}
+      <div style={{ background:"linear-gradient(135deg,#1a5fa8 0%,#0d2137 60%,#1a8c82 100%)",
+        borderRadius:14, padding:"24px 28px", marginBottom:24, position:"relative", overflow:"hidden" }}>
+        <div style={{ position:"absolute", top:-30, right:-30, width:160, height:160, borderRadius:"50%",
+          background:"rgba(255,255,255,.04)", pointerEvents:"none" }}/>
+        <button onClick={onClose}
+          style={{ position:"absolute", top:16, right:16, background:"rgba(255,255,255,.12)",
+            border:"none", color:"#fff", borderRadius:8, padding:"5px 12px", cursor:"pointer",
+            fontSize:12, fontWeight:600, fontFamily:"inherit" }}>
+          ← Voltar
+        </button>
+        <div style={{ display:"flex", alignItems:"center", gap:20 }}>
+          <div style={{ width:70, height:70, borderRadius:"50%", flexShrink:0,
+            background:"rgba(255,255,255,.15)", border:"2px solid rgba(255,255,255,.3)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:26, fontWeight:700, color:"#fff" }}>
+            {initials}
+          </div>
+          <div>
+            <div style={{ fontSize:20, fontWeight:800, color:"#fff", letterSpacing:"-.02em" }}>
+              {pac.nm}
+              {pac.whatsapp && <span style={{ marginLeft:10, fontSize:18 }}>💬</span>}
+            </div>
+            <div style={{ fontSize:12, color:"rgba(255,255,255,.7)", marginTop:4, display:"flex", gap:14, flexWrap:"wrap" }}>
+              {pac.nasc && <span>📅 {pac.nasc}</span>}
+              {pac.cpf  && <span>🪪 CPF: {pac.cpf}</span>}
+              {pac.email && <span>✉ {pac.email}</span>}
+              {pac.tel   && <span>📞 {pac.tel}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs estilo imagem 3 */}
+      <div style={{ display:"flex", gap:1, marginBottom:24, borderBottom:`2px solid ${T.br}` }}>
+        {tabs.map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)}
+            style={{ padding:"10px 20px", fontSize:13, fontWeight:tab===t.key?700:500,
+              color:tab===t.key?T.b:T.txM, border:"none", background:"none", cursor:"pointer",
+              fontFamily:"inherit", borderBottom:tab===t.key?`2px solid ${T.b}`:"2px solid transparent",
+              marginBottom:-2, display:"flex", alignItems:"center", gap:6 }}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: Anamneses */}
+      {tab==="anamneses" && (
+        <div>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
+            <button onClick={()=>setShowAddAnam(true)}
+              style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 20px",
+                background:"linear-gradient(135deg,#1a5fa8,#0d2137)",
+                color:"#fff", border:"none", borderRadius:10, cursor:"pointer",
+                fontSize:13, fontWeight:700, fontFamily:"inherit" }}>
+              📋 Adicionar Anamnese
+            </button>
+          </div>
+
+          {showAddAnam && (
+            <div style={{ background:T.bL, border:`1.5px solid ${T.b}40`, borderRadius:14,
+              padding:"20px", marginBottom:20 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:T.b, marginBottom:14 }}>Nova Anamnese</div>
+              <Fld label="Título">
+                <select style={inp} value={anamForm.titulo}
+                  onChange={e=>setAnamForm(p=>({...p,titulo:e.target.value}))}>
+                  {["Anamnese inicial - Caixa de Texto","Retorno","Consulta de rotina",
+                    "Urgência","Resultado de exame"].map(t=><option key={t}>{t}</option>)}
+                </select>
+              </Fld>
+              <Fld label="Texto da anamnese *">
+                <textarea style={{ ...inp, minHeight:140, resize:"vertical", lineHeight:1.7 }}
+                  value={anamForm.texto} autoFocus
+                  placeholder="Queixas, histórico, exame físico, hipóteses diagnósticas, conduta..."
+                  onChange={e=>setAnamForm(p=>({...p,texto:e.target.value}))} />
+              </Fld>
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <Btn variant="secondary" small onClick={()=>setShowAddAnam(false)}>Cancelar</Btn>
+                <Btn small onClick={saveAnamnese} icon="check">Salvar</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* Tabela de anamneses estilo imagem 3 */}
+          <div style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:14, overflow:"hidden" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr 2fr 1fr",
+              padding:"10px 20px", background:T.sur2, borderBottom:`1px solid ${T.br}`,
+              fontSize:11, fontWeight:700, color:T.txM, textTransform:"uppercase", gap:12 }}>
+              <span>Data</span><span>Título</span><span>Profissional</span><span>Opções</span>
+            </div>
+            {anamneses.length===0 ? (
+              <div style={{ padding:"40px 20px", textAlign:"center", color:T.txS }}>
+                <div style={{ fontSize:32, marginBottom:10 }}>📋</div>
+                <div>Nenhuma anamnese registrada</div>
+                <div style={{ fontSize:11, marginTop:4 }}>Clique em "Adicionar Anamnese" para começar</div>
+              </div>
+            ) : anamneses.map((a,i)=>(
+              <div key={a.id} style={{ display:"grid", gridTemplateColumns:"1fr 2fr 2fr 1fr",
+                padding:"13px 20px", gap:12, alignItems:"center",
+                borderBottom:i<anamneses.length-1?`1px solid ${T.br}`:"none",
+                transition:"background .12s" }}
+                onMouseEnter={e=>e.currentTarget.style.background=T.sur2}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{ fontSize:12, color:T.txM }}>{a.dt}</span>
+                <span style={{ fontSize:13, fontWeight:500, color:T.tx }}>{a.titulo}</span>
+                <span style={{ fontSize:12, color:T.txM }}>{a.profissional}</span>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button title="Ver" onClick={()=>alert(a.titulo+"\n\n"+a.texto)}
+                    style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.b }}>👁</button>
+                  <button title="Excluir" onClick={()=>{
+                    if(window.confirm("Excluir esta anamnese?")) {
+                      const novo=anamneses.filter(x=>x.id!==a.id);
+                      setAnamneses(novo);
+                      localStorage.setItem("anamneses_"+pac.id, JSON.stringify(novo));
+                    }}}
+                    style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.re }}>🗑</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Atestados Médicos */}
+      {tab==="atestado" && (
+        <div>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
+            <button onClick={()=>setShowAddAtest(true)}
+              style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 20px",
+                background:"linear-gradient(135deg,#2D7A4F,#1a5a38)",
+                color:"#fff", border:"none", borderRadius:10, cursor:"pointer",
+                fontSize:13, fontWeight:700, fontFamily:"inherit" }}>
+              📄 Emitir Atestado
+            </button>
+          </div>
+
+          {showAddAtest && (
+            <div style={{ background:T.grB, border:`1.5px solid ${T.gr}40`, borderRadius:14,
+              padding:"20px", marginBottom:20 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:T.gr, marginBottom:14 }}>
+                📄 Novo Atestado Médico — {pac.nm}
+              </div>
+              <Fld label="Dias de afastamento">
+                <select style={inp} value={atestForm.dias}
+                  onChange={e=>setAtestForm(p=>({...p,dias:e.target.value}))}>
+                  {["1","2","3","5","7","10","14","15","30"].map(d=><option key={d}>{d}</option>)}
+                </select>
+              </Fld>
+              <Fld label="Motivo / CID *">
+                <input style={inp} value={atestForm.motivo} placeholder="Ex: Gastroenterite aguda (A09)"
+                  onChange={e=>setAtestForm(p=>({...p,motivo:e.target.value}))} />
+              </Fld>
+              <Fld label="Observações (opcional)">
+                <textarea style={{ ...inp, minHeight:80, resize:"vertical" }}
+                  value={atestForm.obs} placeholder="Orientações adicionais..."
+                  onChange={e=>setAtestForm(p=>({...p,obs:e.target.value}))} />
+              </Fld>
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <Btn variant="secondary" small onClick={()=>setShowAddAtest(false)}>Cancelar</Btn>
+                <Btn small onClick={saveAtestado} icon="check">Salvar e emitir</Btn>
+              </div>
+            </div>
+          )}
+
+          <div style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:14, overflow:"hidden" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr 1fr 1fr",
+              padding:"10px 20px", background:T.sur2, borderBottom:`1px solid ${T.br}`,
+              fontSize:11, fontWeight:700, color:T.txM, textTransform:"uppercase", gap:12 }}>
+              <span>Data</span><span>Motivo</span><span>Dias</span><span>Ações</span>
+            </div>
+            {atestados.length===0 ? (
+              <div style={{ padding:"40px 20px", textAlign:"center", color:T.txS }}>
+                <div style={{ fontSize:32, marginBottom:10 }}>📄</div>
+                <div>Nenhum atestado emitido</div>
+              </div>
+            ) : atestados.map((a,i)=>(
+              <div key={a.id} style={{ display:"grid", gridTemplateColumns:"1fr 2fr 1fr 1fr",
+                padding:"13px 20px", gap:12, alignItems:"center",
+                borderBottom:i<atestados.length-1?`1px solid ${T.br}`:"none" }}
+                onMouseEnter={e=>e.currentTarget.style.background=T.sur2}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{ fontSize:12, color:T.txM }}>{a.dt}</span>
+                <span style={{ fontSize:13, color:T.tx }}>{a.motivo}</span>
+                <span style={{ fontSize:13, fontWeight:700, color:T.gr }}>{a.dias} dia(s)</span>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button title="Imprimir" onClick={()=>imprimirAtestado(a)}
+                    style={{ background:"none", border:"none", cursor:"pointer", fontSize:16 }}>🖨️</button>
+                  <button title="Excluir" onClick={()=>{
+                    if(window.confirm("Excluir este atestado?")) {
+                      const novo=atestados.filter(x=>x.id!==a.id);
+                      setAtestados(novo);
+                      localStorage.setItem("atestados_"+pac.id,JSON.stringify(novo));
+                    }}}
+                    style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.re }}>🗑</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Exames */}
+      {tab==="exames" && (
+        <div>
+          {meusExames.length===0 ? (
+            <div style={{ textAlign:"center", padding:"40px 20px", color:T.txS }}>
+              <div style={{ fontSize:36, marginBottom:10 }}>🔬</div>
+              <div>Nenhum exame registrado para {pac.nm}</div>
+            </div>
+          ) : meusExames.map(e=>(
+            <div key={e.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px",
+              background:T.sur, border:`1px solid ${T.br}`, borderRadius:12, marginBottom:8 }}>
+              <div style={{ width:36, height:36, borderRadius:9, background:T.bL, flexShrink:0,
+                display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <Ic n="exam" sz={16} c={T.b} />
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{e.tipo}</div>
+                <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>{e.dt} {e.obs&&`· ${e.obs}`}</div>
+              </div>
+              {stBadge(e.st)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Tab: Informações */}
+      {tab==="info" && (
+        <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
+          {[
+            ["Data Nasc.", pac.nasc], ["Sexo", pac.sexo], ["CPF", pac.cpf],
+            ["Telefone", pac.tel], ["WhatsApp", pac.whatsapp], ["E-mail", pac.email],
+            ["Plano", pac.plano], ["Status", pac.st],
+          ].filter(([,v])=>v).map(([label,value])=>(
+            <div key={label} style={{ display:"flex", gap:12, padding:"11px 0", borderBottom:`1px solid ${T.br}` }}>
+              <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                letterSpacing:".07em", minWidth:120, flexShrink:0 }}>{label}</span>
+              <span style={{ fontSize:13, color:T.tx, fontWeight:500 }}>{value}</span>
+            </div>
+          ))}
+          {pac.obs && (
+            <div style={{ marginTop:14, background:T.amB, border:`1px solid ${T.amBr}`,
+              borderRadius:10, padding:"12px 16px" }}>
+              <div style={{ fontSize:11, fontWeight:700, color:T.am, textTransform:"uppercase",
+                letterSpacing:".07em", marginBottom:6 }}>Observações clínicas</div>
+              <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{pac.obs}</div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -6692,12 +7039,26 @@ function TeleBadge({ children }) {
 }
 
 function SalaEspera({ onIniciar }) {
-  const [fila, setFila] = useFirebaseData("crm_data/crm_fila_v25", "crm_fila_v25", []);
-  const [timer, setTimer] = useState(0);
+  const [fila, setFila] = useState([]);
+  const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
 
-  useEffect(() => {
-    const t = setInterval(() => setTimer(x => x + 1), 60000);
-    return () => clearInterval(t);
+  useEffect(()=>{
+    let active = true;
+    async function poll() {
+      try {
+        const r = await fetch(`${DB_URL}/salas_index.json`);
+        const data = await r.json();
+        if(!active || !data) { setFila([]); return; }
+        const lista = Object.entries(data)
+          .map(([id,info])=>({ id, ...info }))
+          .filter(p=>p.status==="aguardando"||p.status==="atendendo")
+          .sort((a,b)=>(a.entrou||0)-(b.entrou||0));
+        setFila(lista);
+      } catch(e) { /* silencioso */ }
+    }
+    poll();
+    const t = setInterval(poll, 4000);
+    return ()=>{ active=false; clearInterval(t); };
   }, []);
 
   return (
@@ -6706,25 +7067,36 @@ function SalaEspera({ onIniciar }) {
         <span style={{ fontSize: 14, fontWeight: 500 }}>Pacientes aguardando</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500, color: "#8a6a32", background: "#fff3cd", padding: "4px 10px", borderRadius: 8, border: `0.5px solid ${"#e8d5b0"}` }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.gold, display: "inline-block", animation: "pulse 1.5s infinite" }} />
-          {fila.length} na fila
+          {fila.filter(p=>p.status==="aguardando").length} na fila · {fila.filter(p=>p.status==="atendendo").length} em atendimento
         </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {fila.length === 0 && (
+          <div style={{ textAlign:"center", padding:"32px 20px", color:"#888" }}>
+            <div style={{ fontSize:32, marginBottom:8 }}>🕐</div>
+            <div style={{ fontSize:13 }}>Nenhum paciente aguardando no momento</div>
+            <div style={{ fontSize:11, marginTop:4, color:"#aaa" }}>Atualiza automaticamente a cada 4 segundos</div>
+          </div>
+        )}
         {fila.map((p, i) => (
-          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "white", border: `0.5px solid #e0d8cc`, borderLeft: p.tipo === "VIP 360°" ? `3px solid ${C.gold}` : "0.5px solid #e0d8cc", borderRadius: 12, padding: "12px 14px" }}>
-            <TeleAvatar iniciais={p.iniciais} />
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "white",
+            border: `0.5px solid #e0d8cc`, borderLeft: p.plano === "Premium" ? `3px solid ${C.gold}` : p.status==="atendendo"?"3px solid #2D7A4F":"0.5px solid #e0d8cc",
+            borderRadius: 12, padding: "12px 14px" }}>
+            <TeleAvatar iniciais={(p.nm||p.nome||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>{p.nome}</div>
-              <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
-                {p.motivo} · {p.tipo === "VIP 360°" && <TeleBadge>VIP 360°</TeleBadge>}
+              <div style={{ fontSize: 14, fontWeight: 500 }}>{p.nm||p.nome||p.id}</div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 2, display:"flex", gap:8, alignItems:"center" }}>
+                <span>{p.ultimaTxt ? `"${p.ultimaTxt.replace("←","").trim()}"` : "Aguardando..."}</span>
+                {p.plano==="Premium" && <TeleBadge>Premium</TeleBadge>}
+                {p.status==="atendendo" && <span style={{color:"#2D7A4F",fontWeight:600}}>● Em atendimento</span>}
               </div>
             </div>
-            <div style={{ textAlign: "right", flexShrink: 0, marginRight: 8 }}>
-              <div style={{ fontSize: 11, color: "#aaa" }}>Espera</div>
-              <div style={{ fontSize: 15, fontWeight: 500, color: p.espera > 15 ? C.red : "#2C1F14" }}>{p.espera + timer} min</div>
-            </div>
-            <TeleBtn onClick={() => onIniciar(p)} color={C.green} style={{ fontSize: 12, padding: "6px 12px" }}>Iniciar</TeleBtn>
+            <TeleBtn onClick={() => onIniciar({...p, nome:p.nm||p.nome||p.id})}
+              color={p.status==="atendendo"?C.green:C.gold}
+              style={{ fontSize: 12, padding: "6px 12px" }}>
+              {p.status==="atendendo"?"Continuar":"Iniciar"}
+            </TeleBtn>
           </div>
         ))}
       </div>
@@ -6732,7 +7104,7 @@ function SalaEspera({ onIniciar }) {
       <div style={{ marginTop: 20, padding: "12px 16px", background: "#f5f0e8", borderRadius: 12, fontSize: 13, color: "#2C1F14" }}>
         <strong>Link da sala de espera pública:</strong>
         <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 12, color: "#8a6a32", wordBreak: "break-all" }}>
-          https://ilzaezequiel.com.br/telemedicina/sala-espera
+          https://sala-virtual-ecru.vercel.app
         </div>
         <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>Pacientes entram por este link e aguardam até a médica iniciar a consulta.</div>
       </div>
@@ -7171,10 +7543,55 @@ function PageSalaVirtual({ pats }) {
   const [view, setView]             = useState("sala"); // "sala" | "chat"
   const [confirmEnc, setConfirmEnc] = useState(false);
   const [msgEnc, setMsgEnc]         = useState("Obrigada pela confiança! Atendimento encerrado. Cuide-se! 🌿");
+  const [anexo, setAnexo]           = useState(null);   // { name, dataUrl }
+  const [enviando, setEnviando]     = useState(false);
   const bottomRef = useRef();
   const inputRef  = useRef();
+  const fileRef   = useRef();
 
   const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+
+  // ── Ler arquivo e converter para base64 ──
+  function lerArquivo(file) {
+    return new Promise((res, rej) => {
+      if (file.size > 3 * 1024 * 1024) { rej(new Error("Arquivo maior que 3MB")); return; }
+      const reader = new FileReader();
+      reader.onload  = () => res(reader.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function onAnexoChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const dataUrl = await lerArquivo(file);
+      setAnexo({ name: file.name, dataUrl });
+    } catch(err) {
+      alert(err.message || "Erro ao ler arquivo");
+    }
+    e.target.value = "";
+  }
+
+  function getFileIcon(name="") {
+    const ext = name.split(".").pop().toLowerCase();
+    if (ext==="pdf") return "📕";
+    if (["doc","docx"].includes(ext)) return "📘";
+    if (["xls","xlsx"].includes(ext)) return "📗";
+    if (["png","jpg","jpeg","gif","webp"].includes(ext)) return "🖼️";
+    return "📎";
+  }
+
+  // ── Download de arquivo base64 ──
+  function downloadBase64(dataUrl, fileName) {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = fileName || "arquivo";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
 
   // ── Polling REST API /salas_index (a cada 5s) ──
   useEffect(()=>{
@@ -7255,19 +7672,39 @@ function PageSalaVirtual({ pats }) {
 
   async function enviar() {
     const txt = texto.trim();
-    if(!txt || !selPac) return;
-    const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-    const msgKey = "m" + Date.now();
-    await fetch(`${DB_URL}/salas/${selPac.id}/msgs/${msgKey}.json`, {
-      method:"PUT", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ txt, de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true })
-    });
-    await fetch(`${DB_URL}/salas_index/${selPac.id}/ultimaTxt.json`, {
-      method:"PUT", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify("← "+txt.substring(0,50))
-    });
-    setTexto("");
-    setTimeout(()=>inputRef.current?.focus(), 50);
+    if (!txt && !anexo) return;
+    if (!selPac) return;
+    setEnviando(true);
+    try {
+      const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+      const msgKey = "m" + Date.now();
+      const payload = {
+        txt: txt || "",
+        de: "dra",
+        nome: "Equipe Dra. Ilza",
+        ts, tsNum: Date.now(), lida: true
+      };
+      if (anexo) {
+        payload.fileName = anexo.name;
+        payload.fileUrl  = anexo.dataUrl;  // base64 data URI
+      }
+      await fetch(`${DB_URL}/salas/${selPac.id}/msgs/${msgKey}.json`, {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const preview = anexo ? `← 📎 ${anexo.name}` : `← ${txt.substring(0,50)}`;
+      await fetch(`${DB_URL}/salas_index/${selPac.id}/ultimaTxt.json`, {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(preview)
+      });
+      setTexto("");
+      setAnexo(null);
+      setTimeout(()=>inputRef.current?.focus(), 50);
+    } catch(err) {
+      console.error("[Sala] enviar:", err);
+    } finally {
+      setEnviando(false);
+    }
   }
 
   function onKey(e) { if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }
@@ -7460,56 +7897,75 @@ function PageSalaVirtual({ pats }) {
         )}
         {msgs.map(m => {
           const isDra = m.de === "dra";
-          const hasFile = m.fileUrl || m.fileName;
+          const isImg = m.fileUrl && (m.fileUrl.startsWith("data:image") || /\.(png|jpg|jpeg|gif|webp)$/i.test(m.fileName||""));
+          const isPdf = m.fileUrl && (m.fileUrl.startsWith("data:application/pdf") || /\.pdf$/i.test(m.fileName||""));
+          const hasFile = !!(m.fileUrl || m.fileName);
           return (
             <div key={m.id} style={{ display:"flex", justifyContent:isDra?"flex-end":"flex-start" }}>
-              <div style={{ maxWidth:"72%" }}>
+              <div style={{ maxWidth:"76%" }}>
                 {!isDra && (
                   <div style={{ fontSize:10, color:T.txS, marginBottom:3, paddingLeft:4 }}>
                     {selPac?.nm.split(" ")[0]}
                   </div>
                 )}
                 <div style={{
-                  padding: hasFile ? "0" : "10px 14px",
                   borderRadius:isDra?"16px 16px 4px 16px":"16px 16px 16px 4px",
                   background:isDra?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur,
-                  color:isDra?"#fff":T.tx, fontSize:13, lineHeight:1.55,
+                  color:isDra?"#fff":T.tx,
                   boxShadow:isDra?"0 4px 14px rgba(168,114,42,.28)":"0 1px 4px rgba(44,26,8,.08)",
                   border:isDra?"none":`1px solid ${T.br}`,
                   overflow:"hidden",
                 }}>
+                  {/* Arquivo */}
                   {hasFile && (
                     <div style={{ padding:"10px 14px", borderBottom: m.txt ? `1px solid ${isDra?"rgba(255,255,255,.15)":T.br}` : "none" }}>
                       {m.fileUrl ? (
-                        m.fileUrl.match(/\.(png|jpg|jpeg|gif|webp)/i) ? (
-                          <img src={m.fileUrl} alt={m.fileName||"imagem"} style={{ maxWidth:"100%", maxHeight:200, borderRadius:8, display:"block", cursor:"pointer" }}
-                            onClick={()=>window.open(m.fileUrl,"_blank")} />
+                        isImg ? (
+                          // Imagem: mostrar preview clicável
+                          <img src={m.fileUrl} alt={m.fileName||"imagem"}
+                            onClick={()=>downloadBase64(m.fileUrl, m.fileName||"imagem")}
+                            style={{ maxWidth:"100%", maxHeight:220, borderRadius:8,
+                              display:"block", cursor:"pointer", objectFit:"contain" }}
+                            title="Clique para baixar" />
                         ) : (
-                          <a href={m.fileUrl} target="_blank" rel="noreferrer"
-                            style={{ display:"flex", alignItems:"center", gap:8, textDecoration:"none",
-                              color:isDra?"#fff":T.b, fontWeight:600 }}>
-                            <span style={{ fontSize:20 }}>
-                              {m.fileName?.toLowerCase().endsWith(".pdf")?"📕":m.fileName?.match(/\.docx?$/i)?"📘":"📎"}
-                            </span>
-                            <div>
-                              <div style={{ fontSize:12, fontWeight:700 }}>{m.fileName||"Arquivo"}</div>
-                              <div style={{ fontSize:10, opacity:.7 }}>Clique para abrir</div>
+                          // PDF/DOC/outros: botão de download
+                          <button
+                            onClick={()=>downloadBase64(m.fileUrl, m.fileName||"arquivo")}
+                            style={{ display:"flex", alignItems:"center", gap:10, background:"none",
+                              border:"none", cursor:"pointer", padding:0, width:"100%", textAlign:"left" }}>
+                            <div style={{ width:42, height:42, borderRadius:10, flexShrink:0,
+                              background:isDra?"rgba(255,255,255,.15)":T.bL,
+                              display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>
+                              {getFileIcon(m.fileName)}
                             </div>
-                          </a>
+                            <div style={{ minWidth:0 }}>
+                              <div style={{ fontSize:12, fontWeight:700, color:isDra?"#fff":T.tx,
+                                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:200 }}>
+                                {m.fileName||"Arquivo"}
+                              </div>
+                              <div style={{ fontSize:10, color:isDra?"rgba(255,255,255,.65)":T.txS, marginTop:2 }}>
+                                ⬇ Clique para baixar
+                              </div>
+                            </div>
+                          </button>
                         )
                       ) : (
-                        <div style={{ display:"flex", alignItems:"center", gap:8,
-                          color:isDra?"rgba(255,255,255,.7)":T.txS, fontSize:12 }}>
-                          <span>📎</span>
+                        // Sem URL (arquivo grande demais / erro)
+                        <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:12,
+                          color:isDra?"rgba(255,255,255,.75)":T.txS }}>
+                          <span style={{ fontSize:20 }}>{getFileIcon(m.fileName)}</span>
                           <div>
                             <div style={{ fontWeight:600, color:isDra?"#fff":T.tx }}>{m.fileName||"Arquivo"}</div>
-                            <div style={{ fontSize:10, opacity:.7 }}>Arquivo recebido (sem URL)</div>
+                            <div style={{ fontSize:10, opacity:.7 }}>Arquivo muito grande para visualizar</div>
                           </div>
                         </div>
                       )}
                     </div>
                   )}
-                  {m.txt && <div style={{ padding: hasFile ? "8px 14px" : "0" }}>{m.txt}</div>}
+                  {/* Texto */}
+                  {m.txt && (
+                    <div style={{ padding:"10px 14px", fontSize:13, lineHeight:1.55 }}>{m.txt}</div>
+                  )}
                 </div>
                 <div style={{ fontSize:10, color:T.txS, marginTop:3,
                   textAlign:isDra?"right":"left", paddingLeft:isDra?0:4, paddingRight:isDra?4:0 }}>
@@ -7539,8 +7995,53 @@ function PageSalaVirtual({ pats }) {
             display:"flex", alignItems:"center", justifyContent:"center",
             boxShadow:texto.trim()?"0 4px 14px rgba(168,114,42,.35)":"none",
             transition:"all .15s", flexShrink:0 }}>
-          <Ic n="send" sz={16} c={texto.trim()?"#fff":T.brD}/>
-        </button>
+      {/* Input area com anexo */}
+      <div style={{ padding:"12px 24px 16px", background:T.sur, borderTop:`1px solid ${T.br}`, flexShrink:0 }}>
+        {anexo && (
+          <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px",
+            background:T.bL, border:`1px solid ${T.b}30`, borderRadius:10, marginBottom:10 }}>
+            <span style={{ fontSize:20 }}>{getFileIcon(anexo.name)}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:12, fontWeight:600, color:T.b, whiteSpace:"nowrap",
+                overflow:"hidden", textOverflow:"ellipsis" }}>{anexo.name}</div>
+              <div style={{ fontSize:10, color:T.txS }}>Pronto para enviar</div>
+            </div>
+            <button onClick={()=>setAnexo(null)}
+              style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.re, padding:2 }}>✕</button>
+          </div>
+        )}
+        <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
+          <input ref={fileRef} type="file" style={{ display:"none" }}
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+            onChange={onAnexoChange} />
+          <button onClick={()=>fileRef.current?.click()} title="Anexar arquivo (máx 3MB)"
+            style={{ width:42, height:42, borderRadius:11, border:`1.5px solid ${T.br}`,
+              background:T.sur2, cursor:"pointer", display:"flex", alignItems:"center",
+              justifyContent:"center", flexShrink:0, transition:"all .15s" }}
+            onMouseEnter={e=>{ e.currentTarget.style.background=T.bL; e.currentTarget.style.borderColor=T.b+"50"; }}
+            onMouseLeave={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderColor=T.br; }}>
+            <span style={{ fontSize:18 }}>📎</span>
+          </button>
+          <textarea ref={inputRef} value={texto} onChange={e=>setTexto(e.target.value)}
+            onKeyDown={onKey}
+            placeholder={`Escrever para ${selPac?.nm.split(" ")[0]}… (Enter para enviar)`}
+            rows={1}
+            style={{ ...inp, flex:1, resize:"none", lineHeight:1.5,
+              paddingTop:10, paddingBottom:10, maxHeight:100, overflowY:"auto" }}/>
+          <button onClick={enviar} disabled={(!texto.trim()&&!anexo)||enviando}
+            style={{ width:42, height:42, borderRadius:11, border:"none",
+              cursor:(texto.trim()||anexo)&&!enviando?"pointer":"not-allowed",
+              background:(texto.trim()||anexo)&&!enviando?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur2,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              boxShadow:(texto.trim()||anexo)&&!enviando?"0 4px 14px rgba(168,114,42,.35)":"none",
+              transition:"all .15s", flexShrink:0 }}>
+            {enviando
+              ? <span style={{ width:16, height:16, border:"2px solid #fff", borderTopColor:"transparent",
+                  borderRadius:"50%", animation:"spin 1s linear infinite", display:"block" }}/>
+              : <Ic n="send" sz={16} c={(texto.trim()||anexo)&&!enviando?"#fff":T.brD}/>
+            }
+          </button>
+        </div>
       </div>
 
       {/* Modal encerrar */}
