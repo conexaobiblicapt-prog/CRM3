@@ -3299,16 +3299,18 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
             Nenhum paciente encontrado
           </div>
         )}
-        {filtered.map((p,i) => (
+        {filtered.map((p,i) => {
+          const [showTip, setShowTip] = useState(false);
+          const [tipPos, setTipPos] = useState({x:0,y:0});
+          return (
           <div key={p.id} onClick={()=>setSelPac(p)}
             style={{ display:"grid", gridTemplateColumns:"2.6fr 1fr 1.3fr 1.1fr .8fr .5fr .4fr",
               padding:"13px 22px", gap:8, alignItems:"center",
               borderBottom:i<filtered.length-1?`1px solid ${T.br}`:"none",
               cursor:"pointer", transition:"background .12s, border-left .12s",
-              borderLeft:"3px solid transparent" }}
-            onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; }}
-            onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderLeftColor="transparent"; }}>
-            {/* SEM avatar — nome + data direto */}
+              borderLeft:"3px solid transparent", position:"relative" }}
+            onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; setShowTip(true); const r=e.currentTarget.getBoundingClientRect(); setTipPos({x:r.right+8,y:r.top}); }}
+            onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderLeftColor="transparent"; setShowTip(false); }}>
             <div>
               <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}</div>
               <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Último acesso: {p.ults}</div>
@@ -3330,8 +3332,25 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
                   alignItems:"center", justifyContent:"center", flexShrink:0 }}
                 title="Excluir paciente">✕</button>
             )}
+            {/* Tooltip hover */}
+            {showTip && createPortal(
+              <div style={{ position:"fixed", left:tipPos.x, top:Math.min(tipPos.y, window.innerHeight-200),
+                zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
+                padding:"12px 16px", minWidth:200, maxWidth:280, pointerEvents:"none",
+                boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6 }}>
+                <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{p.nm}</div>
+                <div>📅 Nasc: <strong>{p.nasc||"—"}</strong></div>
+                <div>📞 Tel: <strong>{p.tel||"—"}</strong></div>
+                <div>💊 Plano: <strong>{p.plano||"—"}</strong></div>
+                <div>🏷 Status: <strong>{p.st||"—"}</strong></div>
+                {p.obs&&<div style={{marginTop:6,color:"#aec9e8",fontSize:11}}>📝 {p.obs}</div>}
+                <div style={{ marginTop:6, fontSize:10, opacity:.6 }}>Clique para abrir prontuário</div>
+              </div>,
+              document.body
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {showNew && (
@@ -3407,16 +3426,17 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(268px,1fr))", gap:14 }}>
         {filtered.map(e => {
           const { c:ac, bg:abg } = examAccent(e.tipo);
+          const [showTipE, setShowTipE] = useState(false);
+          const [tipPosE, setTipPosE] = useState({x:0,y:0});
           return (
             <div key={e.id} style={{ background:T.sur, border:`1px solid ${T.br}`,
-              borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer" }}
-              onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; }}
-              onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; }}>
+              borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer", position:"relative" }}
+              onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; setShowTipE(true); const r=el.currentTarget.getBoundingClientRect(); setTipPosE({x:r.right+8,y:r.top}); }}
+              onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; setShowTipE(false); }}>
               <div style={{ height:4, background:`linear-gradient(90deg,${ac},${ac}55)` }} />
               <div style={{ padding:"16px 18px" }}>
                 <div style={{ display:"flex", alignItems:"flex-start",
                   justifyContent:"space-between", gap:10, marginBottom:10 }}>
-                  {/* ícone de tipo de exame — sem avatar de iniciais */}
                   <div style={{ width:38, height:38, borderRadius:10, background:abg,
                     display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                     <Ic n="exam" sz={18} c={ac} />
@@ -3434,7 +3454,6 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
                 </div>
                 <div style={{ fontSize:13, fontWeight:700, color:T.tx,
                   marginBottom:5, lineHeight:1.4 }}>{e.tipo}</div>
-                {/* nome do paciente como texto simples — sem avatar */}
                 <div style={{ fontSize:12, color:T.txM, marginBottom:8, fontWeight:500 }}>{e.pac}</div>
                 <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:T.txS }}>
                   <Ic n="cal" sz={12} c={T.txS} />
@@ -3443,6 +3462,19 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.obs}</span></>}
                 </div>
               </div>
+              {showTipE && createPortal(
+                <div style={{ position:"fixed", left:Math.min(tipPosE.x, window.innerWidth-260), top:Math.min(tipPosE.y, window.innerHeight-200),
+                  zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
+                  padding:"12px 16px", minWidth:210, maxWidth:280, pointerEvents:"none",
+                  boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6 }}>
+                  <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{e.tipo}</div>
+                  <div>👤 Paciente: <strong>{e.pac}</strong></div>
+                  <div>📅 Data: <strong>{e.dt}</strong></div>
+                  <div>📊 Status: <strong>{e.st}</strong></div>
+                  {e.obs&&<div>📝 Obs: <strong>{e.obs}</strong></div>}
+                </div>,
+                document.body
+              )}
             </div>
           );
         })}
@@ -4358,12 +4390,15 @@ function PageConsultas({ usuario }) {
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:8, marginLeft:22,
             borderLeft:`2px solid ${T.br}`, paddingLeft:26, marginBottom:24 }}>
-            {byDate[dt].map(c => (
+            {byDate[dt].map(c => {
+              const [showTipC, setShowTipC] = useState(false);
+              const [tipPosC, setTipPosC] = useState({x:0,y:0});
+              return (
               <div key={c.id} style={{ background:T.sur, border:`1px solid ${T.br}`,
                 borderRadius:14, padding:"14px 18px", display:"flex", alignItems:"center", gap:14,
-                transition:"all .18s" }}
-                onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 8px 28px rgba(44,26,8,.1)"; e.currentTarget.style.borderColor=T.b+"45"; }}
-                onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; e.currentTarget.style.borderColor=T.br; }}>
+                transition:"all .18s", position:"relative", cursor:"pointer" }}
+                onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 8px 28px rgba(44,26,8,.1)"; e.currentTarget.style.borderColor=T.b+"45"; setShowTipC(true); const r=e.currentTarget.getBoundingClientRect(); setTipPosC({x:r.right+8,y:r.top}); }}
+                onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; e.currentTarget.style.borderColor=T.br; setShowTipC(false); }}>
                 {/* horário */}
                 <div style={{ textAlign:"center", flexShrink:0, width:48 }}>
                   <div style={{ fontSize:20, fontWeight:800, color:T.b, lineHeight:1 }}>{c.hr}</div>
@@ -4371,7 +4406,6 @@ function PageConsultas({ usuario }) {
                     textTransform:"uppercase" }}>hora</div>
                 </div>
                 <div style={{ width:1, height:40, background:T.br, flexShrink:0 }} />
-                {/* v29: ícone de modalidade — sem avatar de iniciais do paciente */}
                 <div style={{ width:38, height:38, borderRadius:10, flexShrink:0,
                   background:c.tipo==="Teleconsulta"?T.grB:T.bL,
                   display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -4411,8 +4445,24 @@ function PageConsultas({ usuario }) {
                     )}
                   </div>
                 </div>
+                {/* Tooltip */}
+                {showTipC && createPortal(
+                  <div style={{ position:"fixed", left:Math.min(tipPosC.x, window.innerWidth-260), top:Math.min(tipPosC.y, window.innerHeight-220),
+                    zIndex:99999, background:"#0d1f3a", color:"#fff", borderRadius:12,
+                    padding:"12px 16px", minWidth:220, maxWidth:290, pointerEvents:"none",
+                    boxShadow:"0 8px 32px rgba(0,0,0,.35)", fontSize:12, lineHeight:1.6 }}>
+                    <div style={{ fontWeight:700, fontSize:13, marginBottom:6, color:"#7dc8f7" }}>{c.pac}</div>
+                    <div>🕐 Horário: <strong>{c.hr}</strong></div>
+                    <div>🏥 Procedimento: <strong>{c.proc}</strong></div>
+                    <div>📋 Tipo: <strong>{c.tipo}</strong></div>
+                    <div>✅ Status: <strong>{c.st}</strong></div>
+                    {c.obs&&<div>📝 Obs: <strong>{c.obs}</strong></div>}
+                  </div>,
+                  document.body
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -7410,6 +7460,7 @@ function PageSalaVirtual({ pats }) {
         )}
         {msgs.map(m => {
           const isDra = m.de === "dra";
+          const hasFile = m.fileUrl || m.fileName;
           return (
             <div key={m.id} style={{ display:"flex", justifyContent:isDra?"flex-end":"flex-start" }}>
               <div style={{ maxWidth:"72%" }}>
@@ -7419,14 +7470,46 @@ function PageSalaVirtual({ pats }) {
                   </div>
                 )}
                 <div style={{
-                  padding:"10px 14px",
+                  padding: hasFile ? "0" : "10px 14px",
                   borderRadius:isDra?"16px 16px 4px 16px":"16px 16px 16px 4px",
                   background:isDra?"linear-gradient(135deg,#A8722A,#7A5018)":T.sur,
                   color:isDra?"#fff":T.tx, fontSize:13, lineHeight:1.55,
                   boxShadow:isDra?"0 4px 14px rgba(168,114,42,.28)":"0 1px 4px rgba(44,26,8,.08)",
                   border:isDra?"none":`1px solid ${T.br}`,
+                  overflow:"hidden",
                 }}>
-                  {m.txt}
+                  {hasFile && (
+                    <div style={{ padding:"10px 14px", borderBottom: m.txt ? `1px solid ${isDra?"rgba(255,255,255,.15)":T.br}` : "none" }}>
+                      {m.fileUrl ? (
+                        m.fileUrl.match(/\.(png|jpg|jpeg|gif|webp)/i) ? (
+                          <img src={m.fileUrl} alt={m.fileName||"imagem"} style={{ maxWidth:"100%", maxHeight:200, borderRadius:8, display:"block", cursor:"pointer" }}
+                            onClick={()=>window.open(m.fileUrl,"_blank")} />
+                        ) : (
+                          <a href={m.fileUrl} target="_blank" rel="noreferrer"
+                            style={{ display:"flex", alignItems:"center", gap:8, textDecoration:"none",
+                              color:isDra?"#fff":T.b, fontWeight:600 }}>
+                            <span style={{ fontSize:20 }}>
+                              {m.fileName?.toLowerCase().endsWith(".pdf")?"📕":m.fileName?.match(/\.docx?$/i)?"📘":"📎"}
+                            </span>
+                            <div>
+                              <div style={{ fontSize:12, fontWeight:700 }}>{m.fileName||"Arquivo"}</div>
+                              <div style={{ fontSize:10, opacity:.7 }}>Clique para abrir</div>
+                            </div>
+                          </a>
+                        )
+                      ) : (
+                        <div style={{ display:"flex", alignItems:"center", gap:8,
+                          color:isDra?"rgba(255,255,255,.7)":T.txS, fontSize:12 }}>
+                          <span>📎</span>
+                          <div>
+                            <div style={{ fontWeight:600, color:isDra?"#fff":T.tx }}>{m.fileName||"Arquivo"}</div>
+                            <div style={{ fontSize:10, opacity:.7 }}>Arquivo recebido (sem URL)</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {m.txt && <div style={{ padding: hasFile ? "8px 14px" : "0" }}>{m.txt}</div>}
                 </div>
                 <div style={{ fontSize:10, color:T.txS, marginTop:3,
                   textAlign:isDra?"right":"left", paddingLeft:isDra?0:4, paddingRight:isDra?4:0 }}>
@@ -7886,6 +7969,8 @@ function CRM({usuario,onLogout,users,setUsers}){
 
   // ── Badge Sala Virtual: polling /salas_index a cada 5s ──
   const [salaAguardando, setSalaAguardando] = useState(0);
+  const [salaMsgsNovas, setSalaMsgsNovas] = useState(0);
+  const lastMsgTsRef = useRef({});
   useEffect(()=>{
     const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
     let active = true;
@@ -7898,6 +7983,24 @@ function CRM({usuario,onLogout,users,setUsers}){
           ? Object.values(data).filter(p => p.status === "aguardando").length
           : 0;
         setSalaAguardando(count);
+        // Checar mensagens novas de pacientes em todas as salas
+        if(data) {
+          let novas = 0;
+          const ids = Object.keys(data);
+          for(const pid of ids) {
+            try {
+              const rm = await fetch(`${DB_URL}/salas/${pid}/msgs.json`);
+              const msgs = await rm.json();
+              if(!msgs) continue;
+              const lista = Object.values(msgs);
+              const ultimo = Math.max(0, ...lista.map(m=>m.tsNum||0));
+              const anterior = lastMsgTsRef.current[pid]||0;
+              const naoLidas = lista.filter(m=>m.de==="pac"&&!m.lida&&(m.tsNum||0)>0).length;
+              if(naoLidas > 0 && ultimo > anterior) novas += naoLidas;
+            } catch(e) { /* silencioso */ }
+          }
+          setSalaMsgsNovas(novas);
+        } else { setSalaMsgsNovas(0); }
       } catch(e) { /* silencioso */ }
     }
     pollSala();
@@ -7945,7 +8048,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     if(key==="tiktok") return TK_BASE.filter(c=>c.nova).length;
     if(key==="estoque") return estoqueItens.filter(i=>i.qtd<=i.min).length;
     if(key==="exames") return allExames.filter(e=>e.st==="Agendado").length;
-    if(key==="sala") return salaAguardando;
+    if(key==="sala") return salaAguardando + salaMsgsNovas;
     return 0;
   };
 
