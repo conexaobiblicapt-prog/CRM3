@@ -3515,17 +3515,96 @@ function ConsultaRow({ c, usuario, onChangeStatus, onDelete }) {
       <div style={{ background:T.sur, border:`1.5px solid ${T.b}40`, borderRadius:14, padding:"16px 18px", position:"relative" }}>
         <button onClick={()=>setDetalhe(false)}
           style={{ position:"absolute", top:10, right:12, background:"none", border:"none", fontSize:18, cursor:"pointer", color:T.txM }}>✕</button>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap" }}>
           <div style={{ width:38, height:38, borderRadius:10, flexShrink:0,
             background:c.tipo==="Teleconsulta"?T.grB:T.bL,
             display:"flex", alignItems:"center", justifyContent:"center" }}>
             <Ic n={c.tipo==="Teleconsulta"?"video":"users"} sz={17} c={c.tipo==="Teleconsulta"?T.gr:T.b} />
           </div>
-          <div>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:15, fontWeight:700, color:T.tx }}>{c.pac}</div>
             <div style={{ fontSize:12, color:T.txM }}>{c.proc} · {c.tipo}</div>
           </div>
           {stBadge(c.st)}
+          {/* Botões de contato */}
+          {(() => {
+            const linkObs = c.obs && c.obs.includes("videoconsulta-sala.html")
+              ? c.obs.replace("Link: ","").trim() : null;
+            const telLimpo = (c.tel||"").replace(/\D/g,"");
+            const dataFmt = c.dt ? new Date(c.dt+"T12:00").toLocaleDateString("pt-BR") : c.dt || "";
+            const hrFmt   = c.hr || "";
+            const msgWA   = encodeURIComponent(
+              `Olá ${(c.pac||"").split(" ")[0]}! 😊
+
+Sua *consulta* com a Dra. Ilza Ezequiel está confirmada:
+
+` +
+              `📅 Data: ${dataFmt}
+🕐 Horário: ${hrFmt}
+🏥 Tipo: ${c.tipo}
+
+` +
+              (linkObs ? `📹 Link para a videoconsulta:
+${linkObs}
+
+` : "") +
+              `Qualquer dúvida estamos à disposição! 💙
+_Equipe Dra. Ilza Ezequiel | Gastroenterologia_`
+            );
+            return (
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:2 }}>
+                {telLimpo && (
+                  <button
+                    onClick={()=>window.open(`https://wa.me/55${telLimpo}?text=${msgWA}`,"_blank")}
+                    style={{ display:"flex", alignItems:"center", gap:5,
+                      background:"#25D366", border:"none", color:"#fff",
+                      borderRadius:8, padding:"6px 12px", fontSize:11,
+                      fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    📱 WhatsApp
+                  </button>
+                )}
+                {c.email && (
+                  <button
+                    onClick={()=>{
+                      const sub  = encodeURIComponent("Confirmação de Consulta — Dra. Ilza Ezequiel");
+                      const body = encodeURIComponent(
+                        `Olá ${(c.pac||"").split(" ")[0]},
+
+Sua consulta está confirmada:
+
+Data: ${dataFmt}
+Horário: ${hrFmt}
+Tipo: ${c.tipo}
+` +
+                        (linkObs ? `
+Link videoconsulta: ${linkObs}
+` : "") +
+                        `
+Dúvidas: (13) 97802-8137
+Equipe Dra. Ilza Ezequiel`
+                      );
+                      window.open(`mailto:${c.email}?subject=${sub}&body=${body}`,"_blank");
+                    }}
+                    style={{ display:"flex", alignItems:"center", gap:5,
+                      background:`${T.b}12`, border:`1px solid ${T.b}30`,
+                      color:T.b, borderRadius:8, padding:"6px 12px",
+                      fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    📧 E-mail
+                  </button>
+                )}
+                {linkObs && (
+                  <button
+                    onClick={()=>window.open(linkObs,"_blank")}
+                    style={{ display:"flex", alignItems:"center", gap:5,
+                      background:T.grB, border:`1px solid ${T.gr}30`, color:T.gr,
+                      borderRadius:8, padding:"6px 12px", fontSize:11,
+                      fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                    📹 Sala vídeo
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px", fontSize:13, lineHeight:1.8 }}>
           <div><span style={{ color:T.txM, fontSize:11 }}>🕐 Horário</span><br/><strong>{c.hr}</strong></div>
@@ -6971,17 +7050,7 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
   );
 }
 
-function PageHome({ setPage, usuario }) {
-  // Lê dados reais do localStorage
-  const patsReal = React.useMemo(() => {
-    try { const r=safeLsGet("crm_pats_v26"); return Array.isArray(r)?r:[]; } catch { return []; }
-  }, []);
-  const consultasReal = React.useMemo(() => {
-    try { const r=safeLsGet("crm_consultas_v26"); return Array.isArray(r)?r:[]; } catch { return []; }
-  }, []);
-  const examesReal = React.useMemo(() => {
-    try { const r=safeLsGet("crm_exames_v26"); return Array.isArray(r)?r:[]; } catch { return []; }
-  }, []);
+function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasReal=[], exames: examesReal=[] }) {
   const consultas = consultasReal; // compatibilidade com gráficos abaixo
 
   // Consultas e exames nos próximos 30 dias
@@ -7018,13 +7087,68 @@ function PageHome({ setPage, usuario }) {
         <div style={{ position:"absolute", bottom:-80, right:80, width:180, height:180,
           borderRadius:"50%", background:"rgba(168,114,42,.16)", pointerEvents:"none" }} />
         <div style={{ position:"relative" }}>
+          {/* ── Feriados e datas comemorativas ── */}
+          {(()=>{
+            const d   = new Date();
+            const mm  = String(d.getMonth()+1).padStart(2,"0");
+            const dd  = String(d.getDate()).padStart(2,"0");
+            const key = `${mm}-${dd}`;
+            const DATAS = {
+              "01-01":["🎉","Feliz Ano Novo!","Que este ano traga saúde e realizações a todos os pacientes."],
+              "01-06":["👑","Dia de Reis","Uma data especial para celebrar com carinho."],
+              "02-14":["💝","Dia dos Namorados (Valentine's)","Cuide do amor e da saúde!"],
+              "03-08":["🌸","Dia Internacional da Mulher","Parabéns a todas as mulheres incríveis!"],
+              "04-07":["🩺","Dia Mundial da Saúde","Promover saúde é o nosso propósito."],
+              "04-17":["🐣","Semana da Páscoa","Boas Festas de Páscoa a todos!"],
+              "04-18":["🐣","Sexta-Feira Santa","Feriado nacional — boa Páscoa!"],
+              "04-20":["🐣","Páscoa","Feliz Páscoa! Que seja um dia de renovação."],
+              "04-21":["⚔️","Tiradentes","Feriado nacional — Dia de Tiradentes."],
+              "05-01":["🔨","Dia do Trabalho","Feliz Dia do Trabalhador! Feriado nacional."],
+              "05-11":["👩‍⚕️","Dia da Gastroenterologia","Homenagem a toda a equipe de gastroenterologia!"],
+              "05-12":["❤️","Dia das Mães","Feliz Dia das Mães — a data mais especial do ano!"],
+              "06-06":["👶","Dia do Médico Pediatra","Saúde para todas as crianças!"],
+              "06-12":["💝","Dia dos Namorados","Feliz Dia dos Namorados!"],
+              "06-15":["🌿","Corpus Christi","Feriado nacional."],
+              "07-04":["🩺","Dia do Médico (EUA)","Uma data para lembrar a vocação de cuidar."],
+              "08-05":["👩‍⚕️","Dia da Enfermagem","Homenagem a toda a equipe de enfermagem!"],
+              "08-11":["⚖️","Dia do Advogado","Parabéns aos colegas do Direito!"],
+              "08-13":["👩‍⚕️","Dia dos Médicos","Parabéns, Dra. Ilza! Obrigada por cuidar de tantas vidas."],
+              "09-07":["🇧🇷","Independência do Brasil","Feriado nacional — Feliz 7 de Setembro!"],
+              "09-28":["💛","Setembro Amarelo","Mês de prevenção ao suicídio. Fale, escute, cuide."],
+              "10-02":["👶","Dia das Crianças (antecipado)","Viva as crianças!"],
+              "10-05":["👩‍🏫","Dia dos Professores","Parabéns a todos os educadores!"],
+              "10-12":["👶","Dia das Crianças & N. Sra. Aparecida","Feriado nacional — viva as crianças!"],
+              "10-15":["👩‍🏫","Dia dos Professores","Parabéns a todos os educadores!"],
+              "11-02":["🕯️","Finados","Feriado nacional."],
+              "11-15":["🇧🇷","Proclamação da República","Feriado nacional."],
+              "11-20":["✊","Dia da Consciência Negra","Feriado nacional."],
+              "12-01":["🎗️","Dia Mundial de Luta contra a AIDS","Saúde e cuidado para todos."],
+              "12-10":["🕊️","Dia dos Direitos Humanos","Dignidade e saúde são direitos de todos."],
+              "12-24":["🎄","Véspera de Natal","Boas Festas! Que a magia do Natal esteja com todos."],
+              "12-25":["🎄","Natal","Feliz Natal! Feriado nacional."],
+              "12-31":["🎆","Réveillon","Boa virada de ano a todos!"],
+            };
+            const entry = DATAS[key];
+            if (!entry) return null;
+            return (
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10,
+                background:"rgba(255,255,255,.08)", border:"1px solid rgba(255,255,255,.14)",
+                borderRadius:10, padding:"8px 14px" }}>
+                <span style={{ fontSize:20 }}>{entry[0]}</span>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:800, color:"#E8C07A", letterSpacing:".04em" }}>{entry[1]}</div>
+                  <div style={{ fontSize:11, color:"rgba(255,255,255,.55)" }}>{entry[2]}</div>
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,.38)",
             letterSpacing:".14em", textTransform:"uppercase", marginBottom:8 }}>
             {(()=>{const d=new Date();const dias=["DOMINGO","SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA","SÁBADO"];const meses=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];return `${dias[d.getDay()]} · ${d.getDate()} DE ${meses[d.getMonth()]} DE ${d.getFullYear()}`;})()}
           </div>
           <div style={{ fontSize:30, fontWeight:800, color:"#fff",
             letterSpacing:"-.03em", lineHeight:1.15, marginBottom:8 }}>
-            Bom dia, Dra. Ilza 👋
+            {(()=>{const h=new Date().getHours();const s=h<12?"Bom dia":h<18?"Boa tarde":"Boa noite";return `${s}, Dra. Ilza 👋`;})()}
           </div>
           <div style={{ fontSize:14, color:"rgba(255,255,255,.48)", marginBottom:24, maxWidth:480 }}>
             {consultasConfirmadas===0&&examesAgendados===0
@@ -8895,6 +9019,7 @@ function CRM({usuario,onLogout,users,setUsers}){
   // ── Dados em tempo real do Firebase — todos os logins sincronizados ──
   const [pats, setPats, patsLoaded]           = useFirebaseData("crm_data/crm_pats_v26",      "crm_pats_v26",      []);
   const [allExamesRaw, setAllExamesRaw, exLoaded] = useFirebaseData("crm_data/crm_exames_v26","crm_exames_v26",    []);
+  const [crmConsultas, setCrmConsultas]       = useFirebaseData("crm_data/crm_consultas_v26", "crm_consultas_v26", []);
   const patsState=[pats,setPats];
   // Fila prioridade
   const [filaPrioridadeVis,setFilaPrioridadeVis]=useState(false);
@@ -8973,7 +9098,7 @@ function CRM({usuario,onLogout,users,setUsers}){
   const [pacFiltro, setPacFiltro] = useState(null);
 
   const pages = useMemo(() => ({
-    home:        usuario.role==="recepcao" ? <PageHomeRecepcao setPage={setPage} usuario={usuario} pats={pats} allExames={allExames}/> : <PageHome setPage={setPage} usuario={usuario}/>,
+    home:        usuario.role==="recepcao" ? <PageHomeRecepcao setPage={setPage} usuario={usuario} pats={pats} allExames={allExames}/> : <PageHome setPage={setPage} usuario={usuario} pats={pats} consultas={crmConsultas} exames={allExamesRaw}/>,
     whatsapp:    <PageWhatsApp usuario={usuario} patsState={patsState}/>,
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
