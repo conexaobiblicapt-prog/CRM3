@@ -3809,12 +3809,30 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
 // ─── Ficha Completa do Paciente (página inteira, estilo imagem 3) ──────────────
 function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, onUpdatePac }) {
   const [tab, setTab]               = useState("anamneses");
-  const [anamneses, setAnamneses]   = useState(() => {
-    try { return JSON.parse(localStorage.getItem("anamneses_"+pac.id)||"[]"); } catch(e){return[];}
-  });
-  const [atestados, setAtestados]   = useState(() => {
-    try { return JSON.parse(localStorage.getItem("atestados_"+pac.id)||"[]"); } catch(e){return[];}
-  });
+  // ── Anamneses e Atestados sincronizados via Firebase (PC ↔ Mobile) ──
+  const [anamneses, setAnamneses]   = useState([]);
+  const [atestados, setAtestados]   = useState([]);
+  useEffect(() => {
+    fbRead(`crm_data/prontuarios/${pac.id}/anamneses`).then(v => {
+      if (v && Array.isArray(v)) setAnamneses(v);
+      else {
+        // Migração única: localStorage → Firebase
+        try {
+          const ls = JSON.parse(localStorage.getItem("anamneses_"+pac.id)||"[]");
+          if (ls.length > 0) { fbWrite(`crm_data/prontuarios/${pac.id}/anamneses`, ls); setAnamneses(ls); }
+        } catch(e) {}
+      }
+    });
+    fbRead(`crm_data/prontuarios/${pac.id}/atestados`).then(v => {
+      if (v && Array.isArray(v)) setAtestados(v);
+      else {
+        try {
+          const ls = JSON.parse(localStorage.getItem("atestados_"+pac.id)||"[]");
+          if (ls.length > 0) { fbWrite(`crm_data/prontuarios/${pac.id}/atestados`, ls); setAtestados(ls); }
+        } catch(e) {}
+      }
+    });
+  }, [pac.id]);
   const [showAddAnam, setShowAddAnam] = useState(false);
   const [showAddAtest, setShowAddAtest] = useState(false);
   const [anamForm, setAnamForm] = useState({ titulo:"Anamnese inicial - Caixa de Texto", texto:"" });
@@ -3833,7 +3851,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
     };
     const atualizado = [novo, ...anamneses];
     setAnamneses(atualizado);
-    localStorage.setItem("anamneses_"+pac.id, JSON.stringify(atualizado));
+    fbWrite(`crm_data/prontuarios/${pac.id}/anamneses`, atualizado);
     setAnamForm({ titulo:"Anamnese inicial - Caixa de Texto", texto:"" });
     setShowAddAnam(false);
   }
@@ -3851,7 +3869,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
     };
     const atualizado = [novo, ...atestados];
     setAtestados(atualizado);
-    localStorage.setItem("atestados_"+pac.id, JSON.stringify(atualizado));
+    fbWrite(`crm_data/prontuarios/${pac.id}/atestados`, atualizado);
     setAtestForm({ dias:"1", motivo:"", obs:"" });
     setShowAddAtest(false);
   }
@@ -4010,7 +4028,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
                     if(window.confirm("Excluir esta anamnese?")) {
                       const novo=anamneses.filter(x=>x.id!==a.id);
                       setAnamneses(novo);
-                      localStorage.setItem("anamneses_"+pac.id, JSON.stringify(novo));
+                      fbWrite(`crm_data/prontuarios/${pac.id}/anamneses`, novo);
                     }}}
                     style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.re }}>🗑</button>
                 </div>
@@ -4088,7 +4106,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
                     if(window.confirm("Excluir este atestado?")) {
                       const novo=atestados.filter(x=>x.id!==a.id);
                       setAtestados(novo);
-                      localStorage.setItem("atestados_"+pac.id,JSON.stringify(novo));
+                      fbWrite(`crm_data/prontuarios/${pac.id}/atestados`, novo);
                     }}}
                     style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:T.re }}>🗑</button>
                 </div>
@@ -4415,13 +4433,8 @@ function PageEstoque({usuario,estoqueState}){
    PATS_BASE — fallback inicial de pacientes para o Inbox
    (v32: definição movida para antes do PageInbox)
 ════════════════════════════════════════════════════════════════ */
-const PATS_BASE = (() => {
-  try {
-    const s = localStorage.getItem("crm_pats_v26");
-    if (s) return JSON.parse(s);
-  } catch(e) {}
-  return [];
-})();
+/* ── PATS_BASE — base inicial vazia; PageInbox carrega do Firebase via polling ── */
+const PATS_BASE = [];
 
 /* ════════════════════════════════════════════════════════════════
    INBOX GENÉRICO — WhatsApp / Instagram
@@ -4432,8 +4445,21 @@ const PATS_BASE = (() => {
    • Botão imprimir prontuário universal
 ════════════════════════════════════════════════════════════════ */
 function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,patsState,setPage}){
-  const [convs,setConvs]=useState(()=>{try{const s=localStorage.getItem("crm_convs_"+canal);return s?JSON.parse(s):baseData;}catch(e){return baseData;}});
-  useEffect(()=>{localStorage.setItem("crm_convs_"+canal,JSON.stringify(convs));},[convs,canal]);
+  // ── Conversas sincronizadas via Firebase (PC ↔ Mobile) ──
+  const [convs,setConvs]=useState(baseData);
+  useEffect(()=>{
+    const fbKey=`crm_data/crm_convs_${canal}`;
+    fbRead(fbKey).then(v=>{
+      if(v&&Array.isArray(v)&&v.length>0){setConvs(v);}
+      else{
+        // Migração: localStorage → Firebase
+        try{const s=localStorage.getItem("crm_convs_"+canal);if(s){const ls=JSON.parse(s);if(ls.length>0){fbWrite(fbKey,ls);setConvs(ls);}}}catch(e){}
+      }
+    });
+    const id=setInterval(()=>fbRead(fbKey).then(v=>{if(v&&Array.isArray(v)&&v.length>0)setConvs(v);}),5000);
+    return()=>clearInterval(id);
+  },[canal]);
+  function saveConvs(next){setConvs(next);fbWrite(`crm_data/crm_convs_${canal}`,next);}
   const [sel,setSel]=useState(null);
   const [txt,setTxt]=useState("");
   const [showPC,setShowPC]=useState(false);
@@ -4451,8 +4477,20 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
   const isIG=canal==="instagram";
   const isWA=canal==="whatsapp";
   const [ligTab,setLigTab]=useState("msgs");
-  const [ligacoes,setLigacoes]=useState(()=>{try{const s=localStorage.getItem("crm_ligacoes_v25");return s?JSON.parse(s):(isWA?WA_LIGACOES_INIT:[]);}catch(e){return [];}});
-  useEffect(()=>{localStorage.setItem("crm_ligacoes_v25",JSON.stringify(ligacoes));},[ligacoes]);
+  // ── Ligações sincronizadas via Firebase ──
+  const [ligacoes,setLigacoes]=useState(isWA?WA_LIGACOES_INIT:[]);
+  useEffect(()=>{
+    const fbKey="crm_data/crm_ligacoes_v25";
+    fbRead(fbKey).then(v=>{
+      if(v&&Array.isArray(v)&&v.length>0){setLigacoes(v);}
+      else{
+        try{const s=localStorage.getItem("crm_ligacoes_v25");if(s){const ls=JSON.parse(s);if(ls.length>0){fbWrite(fbKey,ls);setLigacoes(ls);}}}catch(e){}
+      }
+    });
+    const id=setInterval(()=>fbRead(fbKey).then(v=>{if(v&&Array.isArray(v)&&v.length>0)setLigacoes(v);}),5000);
+    return()=>clearInterval(id);
+  },[]);
+  function saveLigacoes(next){setLigacoes(next);fbWrite("crm_data/crm_ligacoes_v25",next);}
   const [ligNota,setLigNota]=useState(null);
   const isTK=canal==="tiktok";
   const TK_GRAD_INB="linear-gradient(135deg,#010101 0%,#69C9D0 50%,#EE1D52 100%)";
@@ -4479,7 +4517,8 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
     if(!txt.trim()||!sel) return;
     const hr=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
     const novaMsgs=[...sel.msgs,{de:"c",tx:txt,hr}];
-    setConvs(c=>c.map(cv=>cv.id!==sel.id?cv:{...cv,msgs:novaMsgs,nova:false}));
+    const next=convs.map(cv=>cv.id!==sel.id?cv:{...cv,msgs:novaMsgs,nova:false});
+    saveConvs(next);
     setSel(s=>({...s,msgs:novaMsgs}));
     setTxt("");setSugestaoIA(null);
   }
@@ -4516,7 +4555,8 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
   }
 
   function setTag(cvId,tagId){
-    setConvs(c=>c.map(cv=>cv.id!==cvId?cv:{...cv,tag:tagId}));
+    const next=convs.map(cv=>cv.id!==cvId?cv:{...cv,tag:tagId});
+    saveConvs(next);
     if(sel&&sel.id===cvId)setSel(s=>({...s,tag:tagId}));
     auditAdd(usuario.nome,"TAG",cvId+"->"+(tagId||"sem"));
   }
@@ -4531,7 +4571,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
     };
     if(setPats) setPats(p=>[novoPat,...p]);
     setSaved(p=>[...p,{...form,id:"pc_"+Date.now(),criadoEm:new Date().toLocaleString("pt-BR"),prontuarioId:novoPat.id}]);
-    setConvs(p=>p.map(c=>c.id===pcCv.id?{...c,nova:false,tag:"agendado",prontuarioId:novoPat.id}:c));
+    saveConvs(convs.map(c=>c.id===pcCv.id?{...c,nova:false,tag:"agendado",prontuarioId:novoPat.id}:c));
     auditAdd(usuario.nome,"PRONTUARIO_AUTO",form.nome+" — prontuário criado automaticamente via "+canalLabel);
     setShowPC(false);
   }
@@ -4677,7 +4717,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
           <div style={{flex:1,overflowY:"auto"}}>
             {ligNota&&(
               <Modal title="📝 Anotação de ligação" onClose={()=>setLigNota(null)} width={400}>
-                <textarea value={ligNota.nota||""} onChange={e=>setLigacoes(p=>p.map(l=>l.id===ligNota.id?{...l,nota:e.target.value}:l))} style={{...SI,minHeight:90,resize:"vertical",marginBottom:12}} placeholder="Anotações sobre esta ligação..."/>
+                <textarea value={ligNota.nota||""} onChange={e=>{const next=ligacoes.map(l=>l.id===ligNota.id?{...l,nota:e.target.value}:l);saveLigacoes(next);setLigNota(x=>({...x,nota:e.target.value}));}} style={{...SI,minHeight:90,resize:"vertical",marginBottom:12}} placeholder="Anotações sobre esta ligação..."/>
                 <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                   <Btn v="g" onClick={()=>setLigNota(null)}>Cancelar</Btn>
                   <Btn v="p" onClick={()=>{setLigNota(null);}}>✅ Salvar</Btn>
@@ -4741,7 +4781,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
             const tg=tagById(c.tag);
             const isVip=c.vip;
             return(
-              <div key={c.id} onClick={()=>{setSel(c);setConvs(p=>p.map(x=>x.id===c.id?{...x,nova:false}:x));setSugestaoIA(null);}} style={{padding:"11px 14px",cursor:"pointer",borderBottom:"1px solid "+C.brd,background:sel&&sel.id===c.id?accentColor+"10":isVip?"rgba(201,149,42,.04)":"transparent",borderLeft:"3px solid "+(sel&&sel.id===c.id?accentColor:isVip?"#c9952a":tg?tg.color:"transparent"),transition:"all .12s"}}>
+              <div key={c.id} onClick={()=>{setSel(c);saveConvs(convs.map(x=>x.id===c.id?{...x,nova:false}:x));setSugestaoIA(null);}} style={{padding:"11px 14px",cursor:"pointer",borderBottom:"1px solid "+C.brd,background:sel&&sel.id===c.id?accentColor+"10":isVip?"rgba(201,149,42,.04)":"transparent",borderLeft:"3px solid "+(sel&&sel.id===c.id?accentColor:isVip?"#c9952a":tg?tg.color:"transparent"),transition:"all .12s"}}>
                 <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
                   <div style={{position:"relative",flexShrink:0}}>
                     <Av s={initials(c.nm)} size={38} color={isVip?C.gold:c.nova?C.amber:accentColor} gradient={isIG&&!c.nova&&!isVip?IG_GRAD:undefined}/>
@@ -4896,7 +4936,7 @@ function PageInbox({usuario,canal,baseData,accentColor,headerGrad,canalLabel,pat
                 {aiLoad?"⏳":"✨ IA"}
               </button>
               <label title="Anexar imagem/vídeo" style={{background:C.card2,border:"1px solid "+C.brd,borderRadius:9,padding:"9px 11px",cursor:"pointer",fontSize:15,flexShrink:0}}>
-                <input type="file" accept="image/*,video/*" onChange={e=>{if(e.target.files[0]&&sel){const f=e.target.files[0];const hr=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});const tp=f.type.startsWith("video")?"video":"img";setConvs(c=>c.map(cv=>cv.id!==sel.id?cv:{...cv,msgs:[...cv.msgs,{de:"c",tx:f.name,hr,type:tp}]}));setSel(s=>({...s,msgs:[...s.msgs,{de:"c",tx:f.name,hr,type:tp}]}));}}} style={{display:"none"}}/>
+                <input type="file" accept="image/*,video/*" onChange={e=>{if(e.target.files[0]&&sel){const f=e.target.files[0];const hr=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});const tp=f.type.startsWith("video")?"video":"img";const next=convs.map(cv=>cv.id!==sel.id?cv:{...cv,msgs:[...cv.msgs,{de:"c",tx:f.name,hr,type:tp}]});saveConvs(next);setSel(s=>({...s,msgs:[...s.msgs,{de:"c",tx:f.name,hr,type:tp}]}));}}} style={{display:"none"}}/>
                 📎
               </label>
               <input value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendMsg()} placeholder={aiLoad?"Gerando...":(isIG?"Instagram...":(isTK?"TikTok DM...":"Digite a mensagem..."))} style={{flex:1,...SI}}/>
@@ -5035,8 +5075,13 @@ function PopupNovaConsulta({ onClose, onSave }) {
 
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
-function PageConsultas({ usuario }) {
-  const [consultas, setConsultas] = useFirebaseData("crm_data/crm_consultas_v26", "crm_consultas_v26", []);
+function PageConsultas({ usuario, consultasProp, setConsultasProp }) {
+  // Se o CRM pai passar as props (Firebase já sincronizado), usa elas.
+  // Caso contrário cria hook próprio como fallback (compatibilidade).
+  const [consultasLocal, setConsultasLocal] = useFirebaseData("crm_data/crm_consultas_v26", "crm_consultas_v26", []);
+  const consultas    = consultasProp    ?? consultasLocal;
+  const setConsultas = setConsultasProp ?? setConsultasLocal;
+
   // Escuta teleconsultas adicionadas pela aba Telemedicina em tempo real
   useEffect(()=>{
     const handler = e => {
@@ -5053,8 +5098,8 @@ function PageConsultas({ usuario }) {
   const [q, setQ] = useState("");
   const filtros = ["Todos","Confirmado","Aguardando","Cancelado","Presencial","Teleconsulta"];
   const filtered = consultas.filter(c => {
-    const matchQ = c.pac.toLowerCase().includes(q.toLowerCase()) ||
-                   c.proc.toLowerCase().includes(q.toLowerCase());
+    const matchQ = (c.pac||"").toLowerCase().includes(q.toLowerCase()) ||
+                   (c.proc||"").toLowerCase().includes(q.toLowerCase());
     const matchF = filtro==="Todos" || c.st===filtro || c.tipo===filtro;
     return matchQ && matchF;
   });
@@ -5469,12 +5514,7 @@ function PageAgenda({usuario}){
 /* ════════════════════════════════════════════════════════════════
    DADOS MOCK — Financeiro (v32: definição faltante corrigida)
 ════════════════════════════════════════════════════════════════ */
-const mockLancamentos_data = (() => {
-  try {
-    const s = localStorage.getItem("crm_lancamentos_v26");
-    if (s) return JSON.parse(s);
-  } catch(e) {}
-  return [
+const mockLancamentos_data = [
     { id:"l1",  pac:"Maria Aparecida Santos",   proc:"Consulta Gastroenterologia", tp:"Particular", val:800,  st:"Pago",     dt:"10/04/2026" },
     { id:"l2",  pac:"João Carlos Oliveira",     proc:"Plano Intestino 360°",       tp:"Plano 360°", val:3000, st:"Pago",     dt:"08/04/2026" },
     { id:"l3",  pac:"Ana Paula Rodrigues",      proc:"Retorno",                    tp:"Particular", val:400,  st:"Pendente", dt:"15/04/2026" },
@@ -5485,8 +5525,7 @@ const mockLancamentos_data = (() => {
     { id:"l8",  pac:"Luciana Ferreira",         proc:"Plano Intestino 360°",       tp:"Plano 360°", val:3000, st:"Pendente", dt:"20/04/2026" },
     { id:"l9",  pac:"Marcos Aurelio Souza",     proc:"Consulta Online (Tele)",     tp:"Particular", val:800,  st:"Pago",     dt:"05/04/2026" },
     { id:"l10", pac:"Simone Batista",           proc:"Consulta Gastroenterologia", tp:"Bradesco",   val:0,    st:"Pago",     dt:"03/04/2026" },
-  ];
-})();
+];
 
 /* ════════════════════════════════════════════════════════════════
    Badge — componente de status (v32: definição faltante corrigida)
@@ -5540,21 +5579,28 @@ function Badge({ label, color, bg, brd }) {
 ════════════════════════════════════════════════════════════════ */
 
 function PageFinancas() {
-  const [lancamentos, setLancamentos] = useState(() => {
-    try {
-      const s = localStorage.getItem("crm_lancamentos_v26");
-      return s ? JSON.parse(s) : mockLancamentos_data;
-    } catch(e) { return mockLancamentos_data; }
-  });
+  // ── Lançamentos sincronizados via Firebase (PC ↔ Mobile) ──
+  const [lancamentos, setLancamentos] = useState(mockLancamentos_data);
   useEffect(() => {
-    try { localStorage.setItem("crm_lancamentos_v26", JSON.stringify(lancamentos)); } catch(e) {}
-  }, [lancamentos]);
+    fbRead("crm_data/crm_lancamentos_v26").then(v => {
+      if (v && Array.isArray(v) && v.length > 0) { setLancamentos(v); }
+      else {
+        // Migração: localStorage → Firebase
+        try {
+          const s = localStorage.getItem("crm_lancamentos_v26");
+          if (s) { const ls = JSON.parse(s); if (ls.length > 0) { fbWrite("crm_data/crm_lancamentos_v26", ls); setLancamentos(ls); } }
+        } catch(e) {}
+      }
+    });
+    const id = setInterval(() => fbRead("crm_data/crm_lancamentos_v26").then(v => { if(v&&Array.isArray(v)&&v.length>0) setLancamentos(v); }), 5000);
+    return () => clearInterval(id);
+  }, []);
+  function saveLancamentos(next) { setLancamentos(next); fbWrite("crm_data/crm_lancamentos_v26", next); }
   const [filtro, setFiltro] = useState("Todos");
   const [confirmLimpar, setConfirmLimpar] = useState(false);
 
   function limparHistorico() {
-    setLancamentos([]);
-    localStorage.removeItem("crm_lancamentos_v26");
+    saveLancamentos([]);
     setConfirmLimpar(false);
   }
 
@@ -5684,12 +5730,24 @@ function PageFinancas() {
 
 
 function PageMarketing({usuario}){
-  const [tarefas,setTarefas]=useState(()=>safeLsGet("crm_marketing_v26"));
-  useEffect(()=>{localStorage.setItem("crm_marketing_v26",JSON.stringify(tarefas));},[tarefas]);
+  // ── Tarefas de Marketing sincronizadas via Firebase (PC ↔ Mobile) ──
+  const [tarefas,setTarefas]=useState([]);
+  useEffect(()=>{
+    const fbKey="crm_data/crm_marketing_v26";
+    fbRead(fbKey).then(v=>{
+      if(v&&Array.isArray(v)&&v.length>0){setTarefas(v);}
+      else{
+        try{const ls=safeLsGet("crm_marketing_v26");if(ls.length>0){fbWrite(fbKey,ls);setTarefas(ls);}}catch(e){}
+      }
+    });
+    const id=setInterval(()=>fbRead(fbKey).then(v=>{if(v&&Array.isArray(v)&&v.length>0)setTarefas(v);}),5000);
+    return()=>clearInterval(id);
+  },[]);
+  function saveTarefas(next){setTarefas(next);fbWrite("crm_data/crm_marketing_v26",next);}
   const [showNew,setShowNew]=useState(false);
   const [form,setForm]=useState({titulo:"",cat:"Instagram",prazo:"",st:"pendente",prior:"media"});
   const priCor={alta:C.red,media:C.amber,baixa:C.green};
-  function toggle(id){setTarefas(p=>p.map(t=>t.id===id?{...t,st:t.st==="feito"?"pendente":"feito"}:t));}
+  function toggle(id){const next=tarefas.map(t=>t.id===id?{...t,st:t.st==="feito"?"pendente":"feito"}:t);saveTarefas(next);}
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
       {showNew&&(
@@ -5701,7 +5759,7 @@ function PageMarketing({usuario}){
               <div><label style={SL}>Prazo</label><input type="date" value={form.prazo} onChange={e=>setForm(p=>({...p,prazo:e.target.value}))} style={SI}/></div>
               <div><label style={SL}>Prioridade</label><select value={form.prior} onChange={e=>setForm(p=>({...p,prior:e.target.value}))} style={SI}><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select></div>
             </div>
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn v="g" onClick={()=>setShowNew(false)}>Cancelar</Btn><Btn v="p" onClick={()=>{setTarefas(p=>[...p,{...form,id:`m${Date.now()}`}]);setShowNew(false);setForm({titulo:"",cat:"Instagram",prazo:"",st:"pendente",prior:"media"});}}>✅ Adicionar</Btn></div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn v="g" onClick={()=>setShowNew(false)}>Cancelar</Btn><Btn v="p" onClick={()=>{saveTarefas([...tarefas,{...form,id:`m${Date.now()}`}]);setShowNew(false);setForm({titulo:"",cat:"Instagram",prazo:"",st:"pendente",prior:"media"});}}>✅ Adicionar</Btn></div>
           </div>
         </Modal>
       )}
@@ -7401,13 +7459,13 @@ function TeleBadge({ children }) {
 function SalaEspera({ onIniciar }) {
   const [fila, setFila]   = useState([]);
   const [salas, setSalas] = useState({});
-  const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
 
   useEffect(() => {
     let active = true;
     async function poll() {
       try {
-        const r    = await fetch(`${DB_URL}/salas_index.json`);
+        const r    = await fetch(`${FB_URL}/salas_index.json${fbQ()}`);
+        if (!r.ok) return;
         const data = await r.json();
         if (!active || !data) { setFila([]); return; }
         const lista = Object.entries(data)
@@ -7912,23 +7970,14 @@ function Agendamento() {
           obs: "Link: " + linkSala
         };
         // Salva no Firebase (sincroniza desktop + mobile)
-        const fbUrl = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
-        fetch(`${fbUrl}/crm_data/crm_consultas_v26.json`)
-          .then(r => r.json())
-          .then(prev => {
-            const lista = Array.isArray(prev) ? prev : [];
-            const atualizada = [...lista, nova].sort((a,b)=>a.dt>b.dt?1:-1);
-            fetch(`${fbUrl}/crm_data/crm_consultas_v26.json`, {
-              method:"PUT", headers:{"Content-Type":"application/json"},
-              body: JSON.stringify(atualizada)
-            });
-            localStorage.setItem("crm_consultas_v26", JSON.stringify(atualizada));
-          })
-          .catch(() => {
-            // Fallback: salva só localStorage se Firebase falhar
-            const prev2 = JSON.parse(localStorage.getItem("crm_consultas_v26")||"[]");
-            localStorage.setItem("crm_consultas_v26", JSON.stringify([...prev2, nova].sort((a,b)=>a.dt>b.dt?1:-1)));
-          });
+        fbRead("crm_data/crm_consultas_v26").then(prev => {
+          const lista = Array.isArray(prev) ? prev : [];
+          const atualizada = [...lista, nova].sort((a,b)=>a.dt>b.dt?1:-1);
+          fbWrite("crm_data/crm_consultas_v26", atualizada);
+        }).catch(() => {
+          // Fallback offline: apenas grava no Firebase quando voltar
+          fbWrite("crm_data/crm_consultas_v26", [nova]);
+        });
         // Dispara evento para sincronizar state em tempo real na mesma aba
         window.dispatchEvent(new CustomEvent("crm_consulta_nova", {detail: nova}));
       } catch(e) { console.warn("Erro ao salvar teleconsulta:", e); }
@@ -8139,8 +8188,6 @@ function PageSalaVirtual({ pats }) {
   const inputRef  = useRef();
   const fileRef   = useRef();
 
-  const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
-
   // ── Ler arquivo e converter para base64 ──
   function lerArquivo(file) {
     return new Promise((res, rej) => {
@@ -8188,7 +8235,7 @@ function PageSalaVirtual({ pats }) {
     let active = true;
     async function poll() {
       try {
-        const r = await fetch(`${DB_URL}/salas_index.json`);
+        const r = await fetch(`${FB_URL}/salas_index.json${fbQ()}`);
         const data = await r.json();
         if(active) setPortalPacs(data || {});
       } catch(e) { console.warn("[Sala] poll salas_index:", e); }
@@ -8204,7 +8251,7 @@ function PageSalaVirtual({ pats }) {
     let active = true;
     async function pollMsgs() {
       try {
-        const r = await fetch(`${DB_URL}/salas/${selPac.id}/msgs.json`);
+        const r = await fetch(`${FB_URL}/salas/${selPac.id}/msgs.json${fbQ()}`);
         const val = await r.json();
         if(!active) return;
         const lista = val
@@ -8246,7 +8293,7 @@ function PageSalaVirtual({ pats }) {
   }
 
   async function atender(pac) {
-    await fetch(`${DB_URL}/salas_index/${pac.id}/status.json`, {
+    await fetch(`${FB_URL}/salas_index/${pac.id}/status.json${fbQ()}`, {
       method:"PUT", headers:{"Content-Type":"application/json"},
       body: JSON.stringify("atendendo")
     });
@@ -8278,12 +8325,12 @@ function PageSalaVirtual({ pats }) {
         payload.fileName = anexo.name;
         payload.fileUrl  = anexo.dataUrl;  // base64 data URI
       }
-      await fetch(`${DB_URL}/salas/${selPac.id}/msgs/${msgKey}.json`, {
+      await fetch(`${FB_URL}/salas/${selPac.id}/msgs/${msgKey}.json${fbQ()}`, {
         method:"PUT", headers:{"Content-Type":"application/json"},
         body: JSON.stringify(payload)
       });
       const preview = anexo ? `← 📎 ${anexo.name}` : `← ${txt.substring(0,50)}`;
-      await fetch(`${DB_URL}/salas_index/${selPac.id}/ultimaTxt.json`, {
+      await fetch(`${FB_URL}/salas_index/${selPac.id}/ultimaTxt.json${fbQ()}`, {
         method:"PUT", headers:{"Content-Type":"application/json"},
         body: JSON.stringify(preview)
       });
@@ -8304,14 +8351,14 @@ function PageSalaVirtual({ pats }) {
     const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
     if(msgEnc.trim()) {
       const msgKey = "m" + Date.now();
-      await fetch(`${DB_URL}/salas/${selPac.id}/msgs/${msgKey}.json`, {
+      await fetch(`${FB_URL}/salas/${selPac.id}/msgs/${msgKey}.json${fbQ()}`, {
         method:"PUT", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ txt:msgEnc.trim(), de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true })
       });
     }
     // Remove da fila
     setTimeout(async()=>{
-      await fetch(`${DB_URL}/salas_index/${selPac.id}.json`, { method:"DELETE" });
+      await fetch(`${FB_URL}/salas_index/${selPac.id}.json${fbQ()}`, { method:"DELETE" });
     }, 800);
     setConfirmEnc(false);
     voltarSala();
@@ -8788,19 +8835,23 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, onLogout, usuario, ge
       <div style={{ padding:"6px 8px 0", borderTop:"1px solid rgba(255,255,255,.06)" }}>
         {bottomItems.map(item => <NavItem key={item.key} item={item} />)}
       </div>
-      {/* v29: footer sem avatar — apenas nome + logout */}
+      {/* Sync status — verde OK, amarelo conectando, VERMELHO offline */}
       {!collapsed&&(
-        <div style={{margin:"0 10px 6px",borderRadius:8,padding:"5px 10px",
-          background:fbSyncStatus==="ok"?"rgba(26,122,82,.18)":fbSyncStatus==="syncing"?"rgba(168,114,42,.18)":"rgba(255,255,255,.04)",
-          border:`1px solid ${fbSyncStatus==="ok"?"rgba(26,122,82,.35)":fbSyncStatus==="syncing"?"rgba(168,114,42,.35)":"rgba(255,255,255,.08)"}`,
+        <div style={{margin:"0 10px 6px",borderRadius:8,padding:"6px 10px",
+          background:fbSyncStatus==="ok"?"rgba(26,122,82,.18)":fbSyncStatus==="offline"?"rgba(192,57,43,.25)":"rgba(168,114,42,.18)",
+          border:`1px solid ${fbSyncStatus==="ok"?"rgba(26,122,82,.35)":fbSyncStatus==="offline"?"rgba(192,57,43,.6)":"rgba(168,114,42,.35)"}`,
           display:"flex",alignItems:"center",gap:6}}>
-          <span style={{width:6,height:6,borderRadius:"50%",flexShrink:0,
-            background:fbSyncStatus==="ok"?"#1A7A52":fbSyncStatus==="syncing"?"#F0C060":"rgba(255,255,255,.25)",
-            animation:fbSyncStatus==="syncing"?"pulse 1s infinite":"none"}}/>
-          <span style={{fontSize:9.5,fontWeight:600,
-            color:fbSyncStatus==="ok"?"#86C9A4":fbSyncStatus==="syncing"?"#F0C060":"rgba(255,255,255,.25)"}}>
-            {fbSyncStatus==="ok"?"Atualizando... ✓":fbSyncStatus==="syncing"?"Sincronizando...":"Aguardando..."}
+          <span style={{width:7,height:7,borderRadius:"50%",flexShrink:0,
+            background:fbSyncStatus==="ok"?"#1A7A52":fbSyncStatus==="offline"?"#E74C3C":"#F0C060",
+            animation:fbSyncStatus==="syncing"?"pulse 1s infinite":fbSyncStatus==="offline"?"pulse .8s infinite":"none"}}/>
+          <span style={{fontSize:9.5,fontWeight:700,flex:1,
+            color:fbSyncStatus==="ok"?"#86C9A4":fbSyncStatus==="offline"?"#FF8080":"#F0C060"}}>
+            {fbSyncStatus==="ok"?"Sincronizado ✓":fbSyncStatus==="offline"?"⚠ Firebase offline — só local":"Conectando..."}
           </span>
+          {fbSyncStatus==="offline"&&(
+            <span title="PC e Celular NÃO sincronizam enquanto Firebase offline&#10;Aplique as regras em firebase-database-rules.json"
+              style={{cursor:"help",fontSize:12}}>❓</span>
+          )}
         </div>
       )}
       <div style={{ padding:collapsed?"10px 15px 14px":"10px 12px 14px",
@@ -8920,92 +8971,196 @@ function Topbar({ page, usuario, onMenuToggle, isMobile }) {
 ═══════════════════════════════════════════════════════════════════════ */
 const FB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
 
+// Se as regras do RTDB exigirem auth, defina o Database Secret aqui.
+// Console Firebase → Configurações do Projeto → Contas de serviço → Secrets do banco de dados
+// Deixe "" se as regras forem: "crm_data": { ".read": true, ".write": true }
+const FB_SECRET = "";
+function fbQ() { return FB_SECRET ? `?auth=${FB_SECRET}` : ""; }
+
+// Variável de estado global de conectividade (silencia logs repetidos)
+let _fbOfflineLogged = false;
+
 async function fbWrite(path, value) {
   try {
-    const r = await fetch(`${FB_URL}/${path}.json`, {
+    const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(value),
     });
+    if (r.status === 401) {
+      if (!_fbOfflineLogged) {
+        console.warn("[Firebase] 401 Unauthorized em WRITE:", path,
+          "\n→ Verifique as Database Rules no console.firebase.google.com",
+          "\n→ Ou configure FB_SECRET com o Database Secret do projeto");
+        _fbOfflineLogged = true;
+      }
+      return false;
+    }
+    _fbOfflineLogged = false;
     return r.ok;
-  } catch(e) { return false; }
+  } catch(e) {
+    console.warn("[Firebase] Erro de rede (write):", e.message);
+    return false;
+  }
 }
 
 async function fbRead(path) {
   try {
-    const r = await fetch(`${FB_URL}/${path}.json`);
+    const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`);
+    if (r.status === 401) {
+      if (!_fbOfflineLogged) {
+        console.warn("[Firebase] 401 Unauthorized em READ:", path,
+          "\n→ Verifique as Database Rules no console.firebase.google.com",
+          "\n→ Regra mínima necessária: \"crm_data\": { \".read\": true, \".write\": true }");
+        _fbOfflineLogged = true;
+      }
+      return null;
+    }
     if (!r.ok) return null;
+    _fbOfflineLogged = false;
     return await r.json();
-  } catch(e) { return null; }
+  } catch(e) {
+    console.warn("[Firebase] Erro de rede (read):", e.message);
+    return null;
+  }
 }
 
-// Hook que mantém um estado sincronizado com o Firebase em tempo real
-// Todos os logins que usam este hook vêem os mesmos dados
+// ─── useFirebaseData — sincronização bidirecional PC ↔ Mobile ─────────────────
+// BUGS CORRIGIDOS:
+//   [A] fbWrite era chamado dentro do setState updater (side-effect em render)
+//       → React 18 pode descartar ou duplicar; agora chama FORA do setData
+//   [B] Polling não aplicava arrays vazios (val.length===0 era ignorado)
+//       → Agora qualquer valor não-null vindo do Firebase é aplicado
+//   [C] dataRef espelha o estado atual para que save() calcule next corretamente
+// ──────────────────────────────────────────────────────────────────────────────
 function useFirebaseData(fbPath, lsKey, defaultValue = []) {
   const [data, setData] = useState(() => {
-    // Inicia com cache local enquanto carrega do Firebase
     const cached = safeLsGet(lsKey, defaultValue);
-    return Array.isArray(cached) ? cached : defaultValue;
+    return Array.isArray(defaultValue)
+      ? (Array.isArray(cached) ? cached : defaultValue)
+      : (cached ?? defaultValue);
   });
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded]     = useState(false);
+  const fbAvailableRef          = useRef(true);
+  // dataRef espelha o estado atual — permite que save() acesse sem closure stale
+  const dataRef                 = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   useEffect(() => {
-    let active = true;
-    let lastEtag = null;
+    let active   = true;
+    let lastHash = "";
 
-    async function fetchFromFB() {
+    async function sync() {
       const val = await fbRead(fbPath);
       if (!active) return;
-      if (val && Array.isArray(val) && val.length > 0) {
-        const str = JSON.stringify(val);
-        if (str !== lastEtag) {
-          lastEtag = str;
+
+      if (val === null) {
+        // Firebase indisponível (401, rede) — mantém dados locais
+        fbAvailableRef.current = false;
+        if (!loaded) setLoaded(true);
+        return;
+      }
+
+      fbAvailableRef.current = true;
+      const isArr = Array.isArray(defaultValue);
+
+      // FIX [B]: aceita qualquer valor não-null — inclusive arrays vazios
+      const remoteHasData = isArr ? Array.isArray(val) : val !== null;
+
+      if (remoteHasData) {
+        const hash = JSON.stringify(val);
+        if (hash !== lastHash) {
+          lastHash = hash;
           setData(val);
-          localStorage.setItem(lsKey, str);
+          dataRef.current = val;
+          localStorage.setItem(lsKey, hash);
+        }
+      } else {
+        // Firebase vazio → migra localStorage (primeiro login / Firebase recém-criado)
+        const local    = safeLsGet(lsKey, defaultValue);
+        const hasLocal = isArr ? local.length > 0 : local !== null && local !== undefined;
+        if (hasLocal) {
+          console.info("[Firebase] Migrando localStorage →", lsKey,
+            `(${isArr ? local.length + " itens" : "objeto"})`);
+          const ok = await fbWrite(fbPath, local);
+          if (ok) {
+            const hash = JSON.stringify(local);
+            if (hash !== lastHash) { lastHash = hash; }
+          }
         }
       }
-      // NOTA: Não sobrescrevemos o Firebase com localStorage quando Firebase está vazio.
-      // Isso evitava o bug onde o dispositivo B apagava os dados do dispositivo A.
-      // O Firebase é sempre a fonte da verdade.
       if (!loaded) setLoaded(true);
     }
 
-    fetchFromFB();
-    const id = setInterval(fetchFromFB, 3000); // polling 3s — todos sincronizados
+    sync();
+    const id = setInterval(sync, 3000);
     return () => { active = false; clearInterval(id); };
-  }, [fbPath, lsKey]);
+  }, [fbPath, lsKey]); // eslint-disable-line
 
-  // Função para salvar — escreve no Firebase E no estado local simultaneamente
-  const save = useCallback(async (updater) => {
-    setData(prev => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      // Salva no Firebase de forma assíncrona
-      fbWrite(fbPath, next);
-      // Cache local imediato
-      localStorage.setItem(lsKey, JSON.stringify(next));
-      return next;
-    });
-  }, [fbPath, lsKey]);
+  // FIX [A]: fbWrite chamado FORA do setData — React 18 safe
+  const save = useCallback((updater) => {
+    // Calcula next usando dataRef (valor atual sem depender de closure stale)
+    const next = typeof updater === "function" ? updater(dataRef.current) : updater;
+    dataRef.current = next;
+    // 1. Atualiza estado React imediatamente (UI reativa)
+    setData(next);
+    // 2. Persiste localStorage (fallback offline)
+    localStorage.setItem(lsKey, JSON.stringify(next));
+    // 3. Persiste Firebase (sync entre dispositivos) — fora do setState
+    if (fbAvailableRef.current) {
+      fbWrite(fbPath, next).then(ok => {
+        if (!ok) console.warn("[Firebase] Falha ao salvar:", fbPath,
+          "→ verifique as Database Rules (crm_data deve ter .write: true)");
+      });
+    } else {
+      console.warn("[Firebase] OFFLINE — dado salvo apenas localmente:", lsKey,
+        "\n→ Para sincronizar PC↔Mobile aplique as regras em firebase-database-rules.json");
+    }
+  }, [fbPath, lsKey]); // eslint-disable-line
 
   return [data, save, loaded];
 }
 
-// Status global de conexão com Firebase
+// Status global de sincronização — exibido na sidebar e no banner
+// "syncing" → aguardando primeira resposta
+// "ok"      → Firebase lendo e escrevendo normalmente
+// "offline" → 401 ou sem rede — dados ficam apenas locais
 function useFirebaseSync() {
   const [syncStatus, setSyncStatus] = React.useState("syncing");
   React.useEffect(() => {
     let active = true;
+    let failCount = 0;
+
     async function check() {
-      const ok = await fbRead("crm_data/crm_last_sync");
       if (!active) return;
-      // Grava timestamp para indicar que este cliente está online
-      await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
-      setSyncStatus("ok");
+      // Testa leitura E escrita para garantir que ambas funcionam
+      const readOk = await fbRead("crm_data/crm_last_sync");
+      if (!active) return;
+
+      if (readOk !== null) {
+        const writeOk = await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
+        if (!active) return;
+        if (writeOk) {
+          failCount = 0;
+          setSyncStatus("ok");
+        } else {
+          // Lê mas não escreve (regras assimétricas)
+          failCount++;
+          if (failCount >= 2) setSyncStatus("offline");
+        }
+      } else {
+        failCount++;
+        if (failCount >= 2) setSyncStatus("offline");
+      }
     }
+
     check();
-    const id = setInterval(check, 15000);
+    // Verifica a cada 10s quando OK, a cada 5s quando offline (tenta reconectar)
+    const id = setInterval(() => {
+      check();
+    }, syncStatus === "offline" ? 5000 : 10000);
     return () => { active = false; clearInterval(id); };
-  }, []);
+  }, []); // eslint-disable-line
   return syncStatus;
 }
 
@@ -9014,7 +9169,6 @@ function CRM({usuario,onLogout,users,setUsers}){
   const [page,setPage]=useState("home");
   const isMobile = useIsMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Fecha sidebar ao trocar de página no mobile
   const setPageAndClose = (p) => { setPage(p); if(isMobile) setMobileOpen(false); };
   // ── Dados em tempo real do Firebase — todos os logins sincronizados ──
   const [pats, setPats, patsLoaded]           = useFirebaseData("crm_data/crm_pats_v26",      "crm_pats_v26",      []);
@@ -9031,7 +9185,34 @@ function CRM({usuario,onLogout,users,setUsers}){
   },[col, isMobile]);
   const [estoqueItens, setEstoqueItens] = useFirebaseData("crm_data/crm_estoque_v26", "crm_estoque_v26", []);
   const [alertasDismissed,setAlertasDismissed]=useState([]);
-  const [showSair,setShowSair]=useState(false);   // ← popup confirmação sair
+  const [showSair,setShowSair]=useState(false);
+
+  // ── Força upload de todos os dados locais → Firebase (use quando Firebase estava offline) ──
+  async function forceSyncAll() {
+    const paths = [
+      ["crm_data/crm_pats_v26",      "crm_pats_v26",      pats],
+      ["crm_data/crm_exames_v26",    "crm_exames_v26",    allExamesRaw],
+      ["crm_data/crm_consultas_v26", "crm_consultas_v26", crmConsultas],
+      ["crm_data/crm_estoque_v26",   "crm_estoque_v26",   estoqueItens],
+    ];
+    let ok = 0;
+    for (const [fbPath, lsKey, current] of paths) {
+      // Usa dado do estado (mais recente) ou cai para localStorage
+      const data = current.length > 0 ? current : safeLsGet(lsKey, []);
+      if (data.length > 0) {
+        const wrote = await fbWrite(fbPath, data);
+        if (wrote) ok++;
+        else console.warn("[forceSyncAll] Falhou:", fbPath);
+      }
+    }
+    if (ok === paths.length) {
+      alert(`✅ Sincronização forçada concluída!\n${ok} coleções enviadas ao Firebase.\nAtualize a página no celular.`);
+    } else {
+      alert(`⚠️ Parcialmente sincronizado (${ok}/${paths.length}).\nVerifique as Database Rules do Firebase.`);
+    }
+  }
+  // Expõe forceSyncAll globalmente para debug via console
+  window.__forceSyncAll = forceSyncAll;
 
   // Registrar handler global para o Electron interceptar o botao X da janela
   useEffect(()=>{
@@ -9045,11 +9226,11 @@ function CRM({usuario,onLogout,users,setUsers}){
   const [salaMsgsNovas, setSalaMsgsNovas] = useState(0);
   const lastMsgTsRef = useRef({});
   useEffect(()=>{
-    const DB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
     let active = true;
     async function pollSala() {
       try {
-        const r = await fetch(`${DB_URL}/salas_index.json`);
+        const r = await fetch(`${FB_URL}/salas_index.json${fbQ()}`);
+        if (!r.ok) return;
         const data = await r.json();
         if(!active) return;
         const count = data
@@ -9062,7 +9243,8 @@ function CRM({usuario,onLogout,users,setUsers}){
           const ids = Object.keys(data);
           for(const pid of ids) {
             try {
-              const rm = await fetch(`${DB_URL}/salas/${pid}/msgs.json`);
+              const rm = await fetch(`${FB_URL}/salas/${pid}/msgs.json${fbQ()}`);
+              if (!rm.ok) continue;
               const msgs = await rm.json();
               if(!msgs) continue;
               const lista = Object.values(msgs);
@@ -9104,7 +9286,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
     pacientes:   <PagePacientes usuario={usuario} estoqueState={estoqueState} pats={pats} setPats={setPats} allExames={allExames} setAllExames={setAllExames} setPage={setPage} setPacFiltro={setPacFiltro}/>,
     exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro}/>,
-    consultas:   <PageConsultas usuario={usuario} />,
+    consultas:   <PageConsultas usuario={usuario} consultasProp={crmConsultas} setConsultasProp={setCrmConsultas}/>,
     agenda:      <PageAgenda usuario={usuario}/>,
     financas:    <PageFinancas usuario={usuario}/>,
     estoque:     <PageEstoque usuario={usuario} estoqueState={estoqueState}/>,
@@ -9113,7 +9295,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     marketing:   <PageMarketing usuario={usuario}/>,
     admin:       <PageAdmin usuario={usuario} users={users} setUsers={setUsers}/>,
     perfil:      <PagePerfil usuario={usuario} users={users} setUsers={setUsers}/>,
-  }), [page, pats, users, estoqueState, patsState, allExames, pacFiltro]); // eslint-disable-line
+  }), [page, pats, crmConsultas, users, estoqueState, patsState, allExames, pacFiltro]); // eslint-disable-line
 
   const getBadge=key=>{
     if(key==="whatsapp") return WA_BASE.filter(c=>c.nova).length;
@@ -9163,8 +9345,33 @@ function CRM({usuario,onLogout,users,setUsers}){
         {/* Main area */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
           <Topbar page={page} usuario={usuario} isMobile={isMobile} onMenuToggle={()=>setMobileOpen(o=>!o)} />
-          <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0,
-            }}>
+        {/* Banner Firebase offline — aparece no topo de todas as páginas */}
+        {fbSyncStatus==="offline"&&(
+          <div style={{
+            background:"linear-gradient(90deg,#C0392B,#E74C3C)",
+            color:"#fff", padding:"7px 20px",
+            display:"flex", alignItems:"center", gap:10,
+            fontSize:12, fontWeight:600, flexShrink:0, zIndex:50,
+          }}>
+            <span style={{fontSize:16}}>⚠️</span>
+            <span style={{flex:1}}>
+              <strong>Firebase offline — PC e Celular NÃO estão sincronizando.</strong>
+              {" "}Dados salvos apenas neste dispositivo.
+              Aplique as regras do arquivo <code style={{background:"rgba(255,255,255,.2)",padding:"1px 5px",borderRadius:4}}>firebase-database-rules.json</code> no console do Firebase.
+            </span>
+            <button onClick={forceSyncAll}
+              style={{color:"#fff",background:"rgba(255,255,255,.25)",padding:"4px 12px",border:"1px solid rgba(255,255,255,.4)",
+                borderRadius:6,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",marginRight:6}}>
+              🔄 Forçar Sync
+            </button>
+            <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer"
+              style={{color:"#fff",background:"rgba(255,255,255,.2)",padding:"4px 12px",
+                borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:11,whiteSpace:"nowrap"}}>
+              Abrir Console ↗
+            </a>
+          </div>
+        )}
+        <div style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column",background:T.bg,minHeight:0}}>
             <div style={{display:"flex",flexDirection:"column",minHeight:"min-content"}}>
               {usuario.role==="recepcao" && RECEPCAO_BLOCKED.includes(page) ? (
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
@@ -9300,72 +9507,52 @@ export default function App(){
 // CRM Dra. Ilza Ezequiel v34 — Dashboard Recepção, tema azul, scroll global
 
 /* ════════════════════════════════════════════════════════════════
-   BRIDGE CRM ↔ PORTAL — sincronização Firebase-style via localStorage
-   Qualquer mudança nos dados do CRM é broadcast para o Portal
-   e vice-versa via storage events + polling
+   BRIDGE CRM ↔ PORTAL — sincronização via Firebase (PC ↔ Mobile)
+   Dados do CRM são lidos direto do Firebase pelo Portal.
+   Mensagens do paciente e notificações também vão para Firebase.
 ════════════════════════════════════════════════════════════════ */
 (function installBridge() {
-  const KEYS = {
-    pats:     "crm_pats_v26",
-    exames:   "crm_exames_v26",
-    agenda:   "crm_agenda_v26",
-    consultas:"crm_consultas_v26",
-    sync:     "crm_portal_sync_ts",
-  };
-
-  // Expor API global para Portal HTML ler/escrever dados CRM
+  // Expor API global para Portal HTML ler/escrever dados CRM via Firebase
   window.CRM_BRIDGE = {
-    getPacientes: () => { try { return JSON.parse(localStorage.getItem(KEYS.pats)||"[]"); } catch(e){return[];} },
-    getExames:    () => { try { return JSON.parse(localStorage.getItem(KEYS.exames)||"[]"); } catch(e){return[];} },
-    getAgenda:    () => { try { return JSON.parse(localStorage.getItem(KEYS.agenda)||"[]"); } catch(e){return[];} },
-    getConsultas: () => { try { return JSON.parse(localStorage.getItem(KEYS.consultas)||"[]"); } catch(e){return[];} },
+    // Leituras: Firebase é a fonte da verdade
+    getPacientes: async () => { const v = await fbRead("crm_data/crm_pats_v26"); return v||[]; },
+    getExames:    async () => { const v = await fbRead("crm_data/crm_exames_v26"); return v||[]; },
+    getAgenda:    async () => { const v = await fbRead("crm_data/crm_agenda_v26"); return v||[]; },
+    getConsultas: async () => { const v = await fbRead("crm_data/crm_consultas_v26"); return v||[]; },
 
-    // Portal escreve mensagem de paciente → CRM recebe
-    addMsgPortal: (pacNome, msg) => {
-      const msgs = safeLsGet("portal_msgs_inbox");
-      msgs.unshift({ id:"pm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false });
-      localStorage.setItem("portal_msgs_inbox", JSON.stringify(msgs));
-      localStorage.setItem(KEYS.sync, Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
+    // Portal escreve mensagem de paciente → CRM recebe via Firebase
+    addMsgPortal: async (pacNome, msg) => {
+      const prev = await fbRead("crm_data/portal_msgs_inbox") || [];
+      const next = [{ id:"pm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false }, ...prev];
+      await fbWrite("crm_data/portal_msgs_inbox", next.slice(0,200));
+      await fbWrite("crm_data/crm_portal_sync_ts", Date.now());
     },
 
-    // CRM escreve resposta → Portal recebe
-    addMsgCRM: (pacNome, msg) => {
-      const msgs = safeLsGet("portal_msgs_outbox");
-      msgs.unshift({ id:"cm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false });
-      localStorage.setItem("portal_msgs_outbox", JSON.stringify(msgs));
-      localStorage.setItem(KEYS.sync, Date.now().toString());
-      window.dispatchEvent(new Event("storage"));
+    // CRM escreve resposta → Portal recebe via Firebase
+    addMsgCRM: async (pacNome, msg) => {
+      const prev = await fbRead("crm_data/portal_msgs_outbox") || [];
+      const next = [{ id:"cm_"+Date.now(), pac:pacNome, msg, ts: new Date().toLocaleString("pt-BR"), lido:false }, ...prev];
+      await fbWrite("crm_data/portal_msgs_outbox", next.slice(0,200));
+      await fbWrite("crm_data/crm_portal_sync_ts", Date.now());
     },
 
-    // Notificar paciente de nova consulta/exame agendado
-    notifyPaciente: (pacNome, tipo, detalhe) => {
-      const notifs = safeLsGet("portal_notificacoes");
-      notifs.unshift({ id:"n_"+Date.now(), pac:pacNome, tipo, detalhe, ts: new Date().toLocaleString("pt-BR"), lido:false });
-      localStorage.setItem("portal_notificacoes", JSON.stringify(notifs.slice(0,100)));
-      localStorage.setItem(KEYS.sync, Date.now().toString());
+    // Notificar paciente de nova consulta/exame agendado via Firebase
+    notifyPaciente: async (pacNome, tipo, detalhe) => {
+      const prev = await fbRead("crm_data/portal_notificacoes") || [];
+      const next = [{ id:"n_"+Date.now(), pac:pacNome, tipo, detalhe, ts: new Date().toLocaleString("pt-BR"), lido:false }, ...prev];
+      await fbWrite("crm_data/portal_notificacoes", next.slice(0,100));
+      await fbWrite("crm_data/crm_portal_sync_ts", Date.now());
     },
 
-    // Badge para WhatsApp do CRM
-    getMsgsPendentes: () => {
+    // Badge para WhatsApp do CRM — lê do Firebase
+    getMsgsPendentes: async () => {
       try {
-        const msgs = safeLsGet("portal_msgs_inbox");
+        const msgs = await fbRead("crm_data/portal_msgs_inbox") || [];
         return msgs.filter(m=>!m.lido).length;
-      } catch(e){return 0;}
+      } catch(e){ return 0; }
     },
 
     // Sync timestamp
-    getLastSync: () => localStorage.getItem(KEYS.sync) || "0",
+    getLastSync: async () => { const v = await fbRead("crm_data/crm_portal_sync_ts"); return v ? String(v) : "0"; },
   };
-
-  // Escuta eventos de storage (Portal rodando em outra aba/janela)
-  window.addEventListener("storage", (e) => {
-    if (e.key === "portal_msgs_inbox") {
-      // Re-render badge no WhatsApp do CRM se visível
-      document.title = (() => {
-        const n = window.CRM_BRIDGE.getMsgsPendentes();
-        return n > 0 ? `(${n}) CRM Dra. Ilza` : "CRM Dra. Ilza";
-      })();
-    }
-  });
 })();
