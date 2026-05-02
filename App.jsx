@@ -9090,6 +9090,7 @@ function PageSalaVirtual({ pats }) {
   async function encerrar() {
     if(!selPac) return;
     const ts = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    // 1. Envia mensagem de encerramento (se houver)
     if(msgEnc.trim()) {
       const msgKey = "m" + Date.now();
       await fetch(`${FB_URL}/salas/${selPac.id}/msgs/${msgKey}.json${fbQ()}`, {
@@ -9097,10 +9098,19 @@ function PageSalaVirtual({ pats }) {
         body: JSON.stringify({ txt:msgEnc.trim(), de:"dra", nome:"Equipe Dra. Ilza", ts, tsNum:Date.now(), lida:true })
       });
     }
-    // Remove da fila
+    // 2. Limpa o Firebase: remove sala inteira (msgs + arquivos base64) e entrada na fila
+    //    Aguarda 900ms para o paciente receber a última mensagem antes de apagar
     setTimeout(async()=>{
-      await fetch(`${FB_URL}/salas_index/${selPac.id}.json${fbQ()}`, { method:"DELETE" });
-    }, 800);
+      try {
+        // Apaga todas as mensagens e arquivos da sala (libera espaço dos base64)
+        await fetch(`${FB_URL}/salas/${selPac.id}.json${fbQ()}`, { method:"DELETE" });
+      } catch(e) { console.warn("[Sala] encerrar — erro ao limpar salas/:", e); }
+      try {
+        // Remove da fila de espera
+        await fetch(`${FB_URL}/salas_index/${selPac.id}.json${fbQ()}`, { method:"DELETE" });
+      } catch(e) { console.warn("[Sala] encerrar — erro ao limpar salas_index/:", e); }
+      console.info(`[Sala] ✅ Sala encerrada e dados removidos do Firebase: ${selPac.id}`);
+    }, 900);
     setConfirmEnc(false);
     voltarSala();
   }
