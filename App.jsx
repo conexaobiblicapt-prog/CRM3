@@ -5002,19 +5002,135 @@ const CAL_LEGENDA = [
   {label:"Bloqueio Médica",     cor:"#c0392b"},
 ];
 
-function PopupNovaConsulta({ onClose, onSave }) {
+function PopupNovaConsulta({ onClose, onSave, pats: patsFromParent=null }) {
+  // ── busca de pacientes (mesmo padrão do PopupNovoExame) ──
+  function normalizePats(v) {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    if (typeof v === "object") return Object.values(v).filter(Boolean);
+    return [];
+  }
+  const [pacientes, setPacientes] = useState(()=>{
+    if (patsFromParent && patsFromParent.length > 0) return patsFromParent;
+    return normalizePats(safeLsGet("crm_pats_v26"));
+  });
+  useEffect(()=>{
+    if (patsFromParent && patsFromParent.length > 0) { setPacientes(patsFromParent); return; }
+    fbRead("crm_data/crm_pats_v26").then(v=>{ const arr=normalizePats(v); if(arr.length>0) setPacientes(arr); });
+  },[patsFromParent]);
+
+  const [pacObj, setPacObj] = useState(null);
+  const [pacQ, setPacQ] = useState("");
+  const [pacNome, setPacNome] = useState("");
+  const [pacOpen, setPacOpen] = useState(false);
+  const pacRef = useRef();
+  const pacFiltrados = pacientes.filter(p=>(p.nome||p.name||"").toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
+  useEffect(()=>{
+    function h(e){ if(pacRef.current&&!pacRef.current.contains(e.target)) setPacOpen(false); }
+    document.addEventListener("mousedown",h);
+    return()=>document.removeEventListener("mousedown",h);
+  },[]);
+  function selecionarPac(p) {
+    const nome=p.nome||p.name||"";
+    setPacNome(nome); setPacQ(nome); setPacObj(p); setPacOpen(false);
+  }
+
   const [form, setForm] = useState({
-    pac:"", dt:"", hr:"", tipo:"Presencial",
+    dt:"", hr:"", tipo:"Presencial",
     proc:"Consulta Gastroenterologia", st:"Aguardando", obs:""
   });
   const f = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  // dados extras do paciente selecionado
+  const pacInfo = pacObj ? [
+    pacObj.telefone&&{icon:"📞",label:"Telefone",val:pacObj.telefone},
+    pacObj.whatsapp&&{icon:"💬",label:"WhatsApp",val:pacObj.whatsapp},
+    pacObj.plano&&{icon:"🏥",label:"Plano",val:pacObj.plano},
+    pacObj.dn&&{icon:"🎂",label:"Nasc.",val:pacObj.dn},
+  ].filter(Boolean) : [];
+
   return (
     <Modal title="Agendar consulta" onClose={onClose} width={520}>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 16px" }}>
         <div style={{ gridColumn:"1/-1" }}>
           <Fld label="Paciente">
-            <input style={inp} value={form.pac} placeholder="Nome do paciente"
-              onChange={e=>f("pac",e.target.value)} />
+            <div ref={pacRef} style={{position:"relative"}}>
+              <div style={{position:"relative"}}>
+                <div style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+                  <Ic n="search" sz={14} c={pacNome?T.b:T.txS}/>
+                </div>
+                <input style={{...inp,paddingLeft:34,paddingRight:36,
+                  borderColor:pacNome?T.b:T.br,borderWidth:pacNome?"1.5px":"1px",
+                  background:pacNome?T.bL:T.sur,fontWeight:pacNome?600:400}}
+                  value={pacQ} placeholder={pacientes.length===0?"Digite o nome...":"Buscar paciente..."}
+                  onChange={e=>{setPacQ(e.target.value);setPacNome("");setPacObj(null);setPacOpen(true);}}
+                  onFocus={()=>setPacOpen(true)} autoFocus/>
+                {pacNome&&(<div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
+                  width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",
+                  justifyContent:"center",cursor:"pointer"}}
+                  onClick={()=>{setPacNome("");setPacQ("");setPacObj(null);setPacOpen(false);}}>
+                  <Ic n="close" sz={10} c="#fff" sw={2.5}/></div>)}
+              </div>
+              {pacOpen&&pacQ.length>0&&(
+                <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:9999,
+                  background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,
+                  boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:240,overflowY:"auto"}}>
+                  {pacFiltrados.length>0?pacFiltrados.map(p=>{
+                    const nome=p.nome||p.name||"—";
+                    const ini=nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
+                    const sub=[p.plano,p.telefone||p.whatsapp].filter(Boolean).join(" · ");
+                    return(<div key={p.id||nome} onClick={()=>selecionarPac(p)}
+                      style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",cursor:"pointer",
+                        borderBottom:`1px solid ${T.br}`,transition:"background .1s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.bL}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
+                        background:`linear-gradient(135deg,${T.b},${T.b}99)`,
+                        display:"flex",alignItems:"center",justifyContent:"center",
+                        fontSize:12,fontWeight:800,color:"#fff"}}>{ini}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.tx}}>{nome}</div>
+                        {sub&&<div style={{fontSize:11,color:T.txS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
+                      </div>
+                    </div>);
+                  }):(
+                    <div style={{padding:"16px",textAlign:"center"}}>
+                      <div style={{fontSize:13,color:T.txM}}>{pacientes.length===0?"Nenhum paciente cadastrado":`Sem resultado para "${pacQ}"`}</div>
+                      <div style={{fontSize:11,color:T.txS,marginTop:4}}>Você pode digitar para usar esse nome</div>
+                    </div>
+                  )}
+                  {pacQ.trim()&&!pacFiltrados.find(p=>(p.nome||p.name||"")===pacQ.trim())&&(
+                    <div onClick={()=>{setPacNome(pacQ.trim());setPacObj(null);setPacOpen(false);}}
+                      style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",
+                        background:T.bL,borderTop:`1px solid ${T.br}`}}
+                      onMouseEnter={e=>e.currentTarget.style.background=`${T.b}18`}
+                      onMouseLeave={e=>e.currentTarget.style.background=T.bL}>
+                      <Ic n="plus" sz={13} c={T.b}/>
+                      <div><div style={{fontSize:12,fontWeight:700,color:T.b}}>Usar "{pacQ.trim()}"</div>
+                        <div style={{fontSize:10,color:T.txS}}>Paciente não cadastrado</div></div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {pacObj&&pacInfo.length>0&&(
+              <div style={{marginTop:8,borderRadius:12,border:`1.5px solid ${T.b}30`,
+                background:`linear-gradient(135deg,${T.bL},${T.sur})`,padding:"8px 14px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.b,marginBottom:4,display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:T.gr,display:"inline-block"}}/>
+                  Dados do paciente
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 12px"}}>
+                  {pacInfo.map(({icon,label,val})=>(
+                    <div key={label} style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                      <span style={{fontSize:12}}>{icon}</span>
+                      <span style={{fontSize:10,color:T.txS}}>{label}:</span>
+                      <span style={{fontSize:11,fontWeight:600,color:T.tx,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Fld>
         </div>
         <Fld label="Data">
@@ -5063,8 +5179,9 @@ function PopupNovaConsulta({ onClose, onSave }) {
         paddingTop:16, borderTop:`1px solid ${T.br}` }}>
         <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={()=>{
-          if(!form.pac.trim()||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
-          const nova = {...form, id:"c"+Date.now(), mod: form.tipo};
+          const nomeFinal = pacNome.trim();
+          if(!nomeFinal||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
+          const nova = {...form, pac:nomeFinal, id:"c"+Date.now(), mod: form.tipo};
           onSave(nova);
           // Email automático via EmailJS
           const link_c = nova.tipo==="Teleconsulta"
@@ -5080,7 +5197,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
 
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
-function PageConsultas({ usuario, consultasProp, setConsultasProp }) {
+function PageConsultas({ usuario, consultasProp, setConsultasProp, pats=[] }) {
   // Se o CRM pai passar as props (Firebase já sincronizado), usa elas.
   // Caso contrário cria hook próprio como fallback (compatibilidade).
   const [consultasLocal, setConsultasLocal] = useFirebaseData("crm_data/crm_consultas_v26", "crm_consultas_v26", []);
@@ -5181,6 +5298,7 @@ function PageConsultas({ usuario, consultasProp, setConsultasProp }) {
 
       {showNew && (
         <PopupNovaConsulta onClose={()=>setShowNew(false)}
+          pats={pats}
           onSave={novo=>setConsultas(p=>[...p,novo].sort((a,b)=>a.dt>b.dt?1:-1))} />
       )}
     </div>
@@ -10058,7 +10176,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
     pacientes:   <PagePacientes usuario={usuario} estoqueState={estoqueState} pats={pats} setPats={setPats} allExames={allExames} setAllExames={setAllExames} setPage={setPage} setPacFiltro={setPacFiltro}/>,
     exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro} pats={pats}/>,
-    consultas:   <PageConsultas usuario={usuario} consultasProp={crmConsultas} setConsultasProp={setCrmConsultas}/>,
+    consultas:   <PageConsultas usuario={usuario} consultasProp={crmConsultas} setConsultasProp={setCrmConsultas} pats={pats}/>,
     agenda:      <PageAgenda usuario={usuario}/>,
     financas:    <PageFinancas usuario={usuario}/>,
     estoque:     <PageEstoque usuario={usuario} estoqueState={estoqueState}/>,
