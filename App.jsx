@@ -3242,12 +3242,28 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
 
 // ─── PAGE: PACIENTES — SEM avatar na tabela ───────────────────────────────────
 
-function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
-  // Lê pacientes direto do Firebase (polling já feito pelo CRM pai)
-  const [pacientes, setPacientes] = useState(()=>safeLsGet("crm_pats_v26"));
+function PopupNovoExame({ onClose, onSave, pacInicial="", pats: patsFromParent=null }) {
+  // Normaliza objeto Firebase {0:{...},1:{...}} → array
+  function normalizePats(v) {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    if (typeof v === "object") return Object.values(v).filter(Boolean);
+    return [];
+  }
+  const [pacientes, setPacientes] = useState(()=>{
+    if (patsFromParent && patsFromParent.length > 0) return patsFromParent;
+    return normalizePats(safeLsGet("crm_pats_v26"));
+  });
   useEffect(()=>{
-    fbRead("crm_data/crm_pats_v26").then(v=>{ if(v&&Array.isArray(v)&&v.length>0) setPacientes(v); });
-  },[]);
+    if (patsFromParent && patsFromParent.length > 0) {
+      setPacientes(patsFromParent);
+      return;
+    }
+    fbRead("crm_data/crm_pats_v26").then(v=>{
+      const arr = normalizePats(v);
+      if (arr.length > 0) setPacientes(arr);
+    });
+  },[patsFromParent]);
   const [pacObj, setPacObj] = useState(null);
   const [pac, setPac] = useState(pacInicial);
   const [pacOpen, setPacOpen] = useState(false);
@@ -4191,7 +4207,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
 
 
 
-function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPacFiltro }) {
+function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPacFiltro, pats=[] }) {
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
   const byPac    = pacFiltro ? exames.filter(e=>e.pac===pacFiltro) : exames;
@@ -4264,6 +4280,7 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
 
       {showNew && (
         <PopupNovoExame onClose={()=>setShowNew(false)}
+          pats={pats}
           onSave={novo=>{ setExames(p=>[novo,...p]); setShowNew(false); }} />
       )}
     </div>
@@ -10040,7 +10057,7 @@ function CRM({usuario,onLogout,users,setUsers}){
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
     pacientes:   <PagePacientes usuario={usuario} estoqueState={estoqueState} pats={pats} setPats={setPats} allExames={allExames} setAllExames={setAllExames} setPage={setPage} setPacFiltro={setPacFiltro}/>,
-    exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro}/>,
+    exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro} pats={pats}/>,
     consultas:   <PageConsultas usuario={usuario} consultasProp={crmConsultas} setConsultasProp={setCrmConsultas}/>,
     agenda:      <PageAgenda usuario={usuario}/>,
     financas:    <PageFinancas usuario={usuario}/>,
