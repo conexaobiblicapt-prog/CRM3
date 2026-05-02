@@ -7293,7 +7293,7 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
   );
 }
 
-function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasReal=[], exames: examesReal=[] }) {
+function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasReal=[], exames: examesReal=[], loaded=true }) {
   const consultas = consultasReal; // compatibilidade com gráficos abaixo
 
   // Consultas e exames nos próximos 30 dias
@@ -7395,7 +7395,7 @@ function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasRea
           </div>
           <div style={{ fontSize:14, color:"rgba(255,255,255,.48)", marginBottom:24, maxWidth:480 }}>
             {consultasConfirmadas===0&&examesAgendados===0
-              ?<span style={{color:"rgba(255,255,255,.38)"}}>Nenhum agendamento nos próximos 30 dias.</span>
+              ?<span style={{color:"rgba(255,255,255,.38)"}}>{!loaded ? "Carregando dados..." : "Nenhum agendamento nos próximos 30 dias."}</span>
               :<>{consultasConfirmadas>0&&<><span style={{color:"#E8C07A",fontWeight:700}}>{consultasConfirmadas} consulta{consultasConfirmadas!==1?"s":""} confirmada{consultasConfirmadas!==1?"s":""}</span>{examesAgendados>0?" e ":""}</>}{examesAgendados>0&&<span style={{color:"#E8C07A",fontWeight:700}}>{examesAgendados} exame{examesAgendados!==1?"s":""} agendado{examesAgendados!==1?"s":""}</span>}{" "}nos próximos 30 dias.</>}
           </div>
           <div style={{ display:"flex", gap:10 }}>
@@ -7427,7 +7427,8 @@ function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasRea
           <div key={m.key} onClick={()=>setPage(m.key)}
             style={{ background:T.sur, border:`1px solid ${T.br}`, borderRadius:16,
               padding:"20px 20px 16px", cursor:"pointer", transition:"all .22s",
-              borderTop:`3px solid ${m.ac}` }}
+              borderTop:`3px solid ${m.ac}`,
+              opacity: (!loaded && m.key !== "financas") ? 0.6 : 1 }}
             onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.12)"; e.currentTarget.style.transform="translateY(-3px)"; }}
             onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; e.currentTarget.style.transform="translateY(0)"; }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
@@ -7440,7 +7441,16 @@ function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasRea
                 {m.pos?"↑":"→"} {m.trend}
               </span>
             </div>
-            <div style={{ fontSize:28, fontWeight:800, color:T.tx, letterSpacing:"-.03em", lineHeight:1 }}>{m.val}</div>
+            <div style={{ fontSize:28, fontWeight:800, color:T.tx, letterSpacing:"-.03em", lineHeight:1 }}>
+              {(!loaded && m.key !== "financas")
+                ? <span style={{
+                    display:"inline-block", width:36, height:28,
+                    background:"linear-gradient(90deg,#e8eef5 25%,#d0dcea 50%,#e8eef5 75%)",
+                    backgroundSize:"200% 100%", borderRadius:6,
+                    animation:"shimmer 1.4s infinite linear"
+                  }} />
+                : m.val}
+            </div
             <div style={{ fontSize:12.5, fontWeight:500, color:T.txM, marginTop:5 }}>{m.label}</div>
             <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>{m.note}</div>
           </div>
@@ -7640,6 +7650,259 @@ function TeleBadge({ children }) {
     </span>
   );
 }
+
+// ─── Sala de Espera EXCLUSIVA de Telemedicina ────────────────────────────────
+// Lê de crm_consultas_v26 (mod="Telemedicina"/"Teleconsulta") — SEPARADO da Sala Virtual
+function SalaEsperaTelemedicina({ onIniciar }) {
+  const [consultas, setConsultas] = useState([]);
+  const [salas, setSalas]         = useState({});   // { [consultaId]: { linkPac, linkMed, roomId, status } }
+  const [filtro, setFiltro]       = useState("hoje"); // "hoje" | "proximas" | "todas"
+
+  // ── Polling Firebase — crm_consultas_v26 filtrado por Telemedicina ──
+  useEffect(() => {
+    let active = true;
+    async function poll() {
+      try {
+        const r = await fetch(`${FB_URL}/crm_data/crm_consultas_v26.json${fbQ()}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!active || !data) { setConsultas([]); return; }
+        const lista = (Array.isArray(data) ? data : Object.values(data))
+          .filter(c => c && (
+            c.mod === "Telemedicina" ||
+            c.mod === "Teleconsulta" ||
+            c.tipo === "Teleconsulta" ||
+            c.tipo === "Telemedicina"
+          ))
+          .sort((a, b) => {
+            // Ordena por data + hora
+            const da = (a.dt || "") + (a.hr || "");
+            const db = (b.dt || "") + (b.hr || "");
+            return da.localeCompare(db);
+          });
+        setConsultas(lista);
+      } catch(e) { /* silencioso */ }
+    }
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(t); };
+  }, []);
+
+  // ── Filtragem por data ──
+  const hoje = new Date().toISOString().slice(0, 10);
+  const consultasFiltradas = consultas.filter(c => {
+    if (filtro === "hoje")    return (c.dt || "") === hoje;
+    if (filtro === "proximas") return (c.dt || "") >= hoje;
+    return true; // todas
+  });
+
+  function gerarSala(consulta) {
+    const pid    = consulta.id;
+    const slug   = pid.replace(/[^a-zA-Z0-9]/g, "");
+    const ts     = Date.now().toString(36);
+    const rand   = Math.random().toString(36).slice(2, 7);
+    const roomId = `tele_${slug}_${ts}_${rand}`;
+    const nome   = encodeURIComponent(consulta.pac || "Paciente");
+    const linkPac = `${VIDEO_ROOM_BASE}/videoconsulta-sala.html?role=patient&room=${roomId}&name=${nome}`;
+    const linkMed = `${VIDEO_ROOM_BASE}/videoconsulta-sala.html?role=doctor&room=${roomId}&name=Dra.%20Ilza%20Ezequiel`;
+    setSalas(prev => ({ ...prev, [pid]: { linkPac, linkMed, roomId, status: "enviado" } }));
+  }
+
+  function copiarLink(consultaId) {
+    const s = salas[consultaId];
+    if (!s) return;
+    navigator.clipboard?.writeText(s.linkPac).catch(() => {
+      const t = document.createElement("textarea");
+      t.value = s.linkPac;
+      document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t);
+    });
+  }
+
+  function enviarWA(consulta) {
+    const s = salas[consulta.id];
+    if (!s) { alert("Gere a sala primeiro!"); return; }
+    const nome  = (consulta.pac || "Paciente").split(" ")[0];
+    const dtFmt = (consulta.dt || "").split("-").reverse().join("/");
+    const msg   =
+      `Olá ${nome}! 😊
+
+` +
+      `Sua teleconsulta com a Dra. Ilza Ezequiel está confirmada.
+` +
+      `📅 ${dtFmt} às ${consulta.hr || ""}
+
+` +
+      `📹 Clique para entrar na sala:
+${s.linkPac}
+
+` +
+      `Aguarde na sala de espera virtual. Cuide-se! 💙`;
+    const tel = (consulta.tel || "").replace(/\D/g, "");
+    const url  = tel
+      ? `https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+  }
+
+  function statusBadge(c) {
+    if (c.st === "Cancelado") return { label: "Cancelado", bg: "#fdf0ee", color: "#C0392B" };
+    if (c.st === "Realizado") return { label: "Realizado", bg: "#e6f5ee", color: "#1A7A52" };
+    if (c.dt < hoje)          return { label: "Pendente",  bg: "#fff8e6", color: "#9A6A00" };
+    if (c.dt === hoje)        return { label: "Hoje",      bg: "#ebf2fb", color: "#1A5FA8" };
+    return { label: "Agendado", bg: "#f0eef9", color: "#4A3A8A" };
+  }
+
+  return (
+    <div>
+      {/* Filtro de data */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+        <span style={{ fontSize:14, fontWeight:500 }}>Teleconsultas agendadas</span>
+        <div style={{ display:"flex", gap:4 }}>
+          {["hoje","proximas","todas"].map(f => (
+            <button key={f} onClick={() => setFiltro(f)} style={{
+              padding:"4px 10px", borderRadius:8, border:`1px solid ${filtro===f ? T.b : T.br}`,
+              background: filtro===f ? T.b : "white", color: filtro===f ? "white" : T.txM,
+              fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit"
+            }}>
+              {f === "hoje" ? "🔵 Hoje" : f === "proximas" ? "📅 Próximas" : "📋 Todas"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Badge contador */}
+      {filtro === "hoje" && (
+        <div style={{
+          display:"flex", alignItems:"center", gap:6, fontSize:12, fontWeight:500,
+          color:"#1A5FA8", background:"#ebf2fb", padding:"6px 12px",
+          borderRadius:8, border:"0.5px solid #C8DCF0", marginBottom:14
+        }}>
+          <span style={{ width:7, height:7, borderRadius:"50%", background:T.b, display:"inline-block", animation:"pulse 1.5s infinite" }} />
+          {consultasFiltradas.length} teleconsulta{consultasFiltradas.length !== 1 ? "s" : ""} hoje
+          {consultasFiltradas.filter(c => salas[c.id]).length > 0 &&
+            ` · ${consultasFiltradas.filter(c => salas[c.id]).length} sala${consultasFiltradas.filter(c => salas[c.id]).length !== 1 ? "s" : ""} gerada${consultasFiltradas.filter(c => salas[c.id]).length !== 1 ? "s" : ""}`
+          }
+        </div>
+      )}
+
+      {/* Lista */}
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {consultasFiltradas.length === 0 && (
+          <div style={{ textAlign:"center", padding:"32px 20px", color:"#888" }}>
+            <div style={{ fontSize:32, marginBottom:8 }}>📹</div>
+            <div style={{ fontSize:13 }}>
+              {filtro === "hoje"
+                ? "Nenhuma teleconsulta agendada para hoje"
+                : "Nenhuma teleconsulta encontrada"}
+            </div>
+            <div style={{ fontSize:11, marginTop:4, color:"#aaa" }}>
+              Agende na aba <strong>Agendar</strong> ou em <strong>Consultas</strong> com modalidade Telemedicina
+            </div>
+          </div>
+        )}
+
+        {consultasFiltradas.map(c => {
+          const sala  = salas[c.id];
+          const dtFmt = (c.dt || "").split("-").reverse().join("/");
+          const badge = statusBadge(c);
+
+          return (
+            <div key={c.id} style={{
+              background:"white", border:`0.5px solid #e0d8cc`,
+              borderLeft: sala ? `3px solid ${T.b}` : `0.5px solid #e0d8cc`,
+              borderRadius:12, overflow:"hidden"
+            }}>
+              <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px" }}>
+                <TeleAvatar iniciais={(c.pac||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:500 }}>{c.pac}</div>
+                  <div style={{ fontSize:12, color:"#888", marginTop:2, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                    <span>📅 {dtFmt} {c.hr ? `às ${c.hr}` : ""}</span>
+                    {c.proc && <span>· {c.proc}</span>}
+                    <span style={{
+                      fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:99,
+                      background:badge.bg, color:badge.color
+                    }}>{badge.label}</span>
+                  </div>
+                </div>
+
+                <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                  {c.st !== "Cancelado" && c.st !== "Realizado" && (
+                    !sala ? (
+                      <TeleBtn onClick={() => gerarSala(c)} color={T.b} style={{ fontSize:11, padding:"6px 12px" }}>
+                        📹 Gerar sala
+                      </TeleBtn>
+                    ) : (
+                      <>
+                        <TeleBtn onClick={() => window.open(sala.linkMed, "_blank")} color={T.gr} style={{ fontSize:11, padding:"6px 12px" }}>
+                          🟢 Entrar como Dra.
+                        </TeleBtn>
+                        <TeleBtn onClick={() => enviarWA(c)} color="#25D366" style={{ fontSize:11, padding:"6px 10px" }}>
+                          📱
+                        </TeleBtn>
+                        <TeleBtn onClick={() => copiarLink(c.id)} color={T.txM} style={{ fontSize:11, padding:"6px 10px", background:"#f5f5f5" }}>
+                          📋
+                        </TeleBtn>
+                      </>
+                    )
+                  )}
+                  <TeleBtn
+                    onClick={() => onIniciar({ ...c, nome: c.pac, iniciais:(c.pac||"?").split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase() })}
+                    color={sala ? T.gr : T.gold}
+                    style={{ fontSize:11, padding:"6px 12px" }}
+                  >
+                    💬 Chat
+                  </TeleBtn>
+                </div>
+              </div>
+
+              {sala && (
+                <div style={{
+                  background:"#f0f6ff", borderTop:"0.5px solid #C8DCF0",
+                  padding:"8px 14px", fontSize:11
+                }}>
+                  <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"center" }}>
+                    <div>
+                      <span style={{ color:"#aaa", fontWeight:600 }}>Link paciente: </span>
+                      <span style={{ fontFamily:"monospace", color:T.b, wordBreak:"break-all" }}>
+                        {sala.linkPac.slice(0, 65)}...
+                      </span>
+                    </div>
+                    <div style={{ marginLeft:"auto", display:"flex", gap:6 }}>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(sala.linkPac)}
+                        style={{ fontSize:10, padding:"3px 8px", borderRadius:5, border:`1px solid ${T.b}30`, background:`${T.b}08`, color:T.b, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}
+                      >📋 Copiar paciente</button>
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(sala.linkMed)}
+                        style={{ fontSize:10, padding:"3px 8px", borderRadius:5, border:`1px solid ${T.gr}30`, background:`${T.gr}08`, color:T.gr, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}
+                      >👩‍⚕️ Copiar Dra.</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Info */}
+      <div style={{ marginTop:20, padding:"12px 16px", background:"#ebf2fb", borderRadius:12, fontSize:13, color:"#0d1f3a" }}>
+        <strong>Como funciona:</strong>
+        <ol style={{ margin:"6px 0 0", paddingLeft:18, lineHeight:2, fontSize:12, color:"#555" }}>
+          <li>Clique em <strong>📹 Gerar sala</strong> ao lado da consulta</li>
+          <li>Envie o link via WhatsApp (📱) ou copie (📋)</li>
+          <li>Clique em <strong style={{ color:T.gr }}>🟢 Entrar como Dra.</strong> para iniciar</li>
+          <li>Use a aba <strong>Agendar</strong> para criar novas teleconsultas</li>
+        </ol>
+        <div style={{ marginTop:10, padding:"8px 12px", background:"rgba(26,95,168,.08)", borderRadius:8, fontSize:11, color:T.b }}>
+          🔒 WebRTC peer-to-peer · Separado da Sala Virtual do Portal · Dados de {new Date().toLocaleDateString("pt-BR")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function SalaEspera({ onIniciar }) {
   const [fila, setFila]   = useState([]);
@@ -8304,6 +8567,7 @@ function PageTelemedicina({usuario}) {
       height:"100%", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         * { box-sizing: border-box; }
         textarea, input, select { font-family: inherit; color: #2C1F14; background: white; }
         textarea:focus, input:focus, select:focus { outline: none; border-color: #B8924A !important; }
@@ -8336,7 +8600,7 @@ function PageTelemedicina({usuario}) {
 
       {/* Conteudo com scroll */}
       <div style={{flex:1, overflowY:"auto", paddingBottom:20}}>
-        {aba === "espera" && <SalaEspera onIniciar={iniciarConsulta} />}
+        {aba === "espera" && <SalaEsperaTelemedicina onIniciar={iniciarConsulta} />}
         {aba === "video" && <Videoconsulta paciente={consultaAtiva} onEncerrar={encerrarConsulta} />}
         {aba === "agenda" && <Agendamento />}
       </div>
@@ -9198,7 +9462,10 @@ async function fbWrite(path, value) {
 
 async function fbRead(path) {
   try {
-    const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`);
+    const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" }
+    });
     if (r.status === 401) {
       if (!_fbOfflineLogged) {
         console.warn("[Firebase] 401 Unauthorized em READ:", path,
@@ -9281,9 +9548,19 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
       if (!loaded) setLoaded(true);
     }
 
+    // Polling agressivo no início (mobile pode demorar): 1s × 5 vezes, depois 3s
+    let attempts = 0;
     sync();
-    const id = setInterval(sync, 3000);
-    return () => { active = false; clearInterval(id); };
+    const fastId = setInterval(() => {
+      attempts++;
+      sync();
+      if (attempts >= 5) {
+        clearInterval(fastId);
+        const slowId = setInterval(sync, 3000);
+        return () => { active = false; clearInterval(slowId); };
+      }
+    }, 1000);
+    return () => { active = false; clearInterval(fastId); };
   }, [fbPath, lsKey]); // eslint-disable-line
 
   // save: escreve APENAS no Firebase — sem localStorage
@@ -9463,7 +9740,7 @@ function CRM({usuario,onLogout,users,setUsers}){
   const [pacFiltro, setPacFiltro] = useState(null);
 
   const pages = useMemo(() => ({
-    home:        usuario.role==="recepcao" ? <PageHomeRecepcao setPage={setPage} usuario={usuario} pats={pats} allExames={allExames}/> : <PageHome setPage={setPage} usuario={usuario} pats={pats} consultas={crmConsultas} exames={allExamesRaw}/>,
+    home:        usuario.role==="recepcao" ? <PageHomeRecepcao setPage={setPage} usuario={usuario} pats={pats} allExames={allExames}/> : <PageHome setPage={setPage} usuario={usuario} pats={pats} consultas={crmConsultas} exames={allExamesRaw} loaded={patsLoaded && exLoaded}/>,
     whatsapp:    <PageWhatsApp usuario={usuario} patsState={patsState}/>,
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
