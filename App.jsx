@@ -1114,9 +1114,11 @@ function Login({onLogin,users}){
     // Salva APENAS id e nome — nunca a senha
     if(lembrar) sessionStorage.setItem("crm_saved_login", JSON.stringify({uid: candidate.id}));
     else sessionStorage.removeItem("crm_saved_login");
-    window._crmUsuario = candidate;
+    const loginAt = new Date().toISOString();
+    const candidateWithMeta = { ...candidate, loginAt, loginMethod: "senha" };
+    window._crmUsuario = candidateWithMeta;
     auditAdd(candidate.nome,"LOGIN","");
-    onLogin(candidate);
+    onLogin(candidateWithMeta);
   }
 
   function lerCertificado(file){
@@ -1134,7 +1136,8 @@ function Login({onLogin,users}){
       setCertLoading(false);
       if(!found){setErr("Sessão expirada. Volte e faça login novamente.");return;}
       auditAdd(found.nome,"LOGIN_CERT",`Cert: ${certFile.name}`);
-      onLogin({...found,certAutenticado:true,certNome:certCN,certArquivo:certFile.name});
+      const loginAt = new Date().toISOString();
+      onLogin({...found,certAutenticado:true,certNome:certCN,certArquivo:certFile.name,loginAt,loginMethod:"certificado"});
     },1800);
   }
 
@@ -6120,6 +6123,265 @@ function AbaAtualizacoes({usuario}){
   );
 }
 
+// ─── UptimeRobot Widget — Monitoramento em tempo real ───────────────────────
+// Aceita: Main API Key (ur...) OU Monitor-Specific Key (m...)
+// API docs: https://uptimerobot.com/api/
+function UptimeRobotWidget() {
+  const LS_KEY = "crm_uptime_apikey";
+  const [apiKey, setApiKey]       = React.useState(() => localStorage.getItem(LS_KEY) || "");
+  const [inputKey, setInputKey]   = React.useState("");
+  const [monitors, setMonitors]   = React.useState([]);
+  const [loading, setLoading]     = React.useState(false);
+  const [error, setError]         = React.useState("");
+  const [lastCheck, setLastCheck] = React.useState(null);
+  const [editMode, setEditMode]   = React.useState(!localStorage.getItem(LS_KEY));
+
+  // Detecta tipo de chave
+  function keyType(k) {
+    if (!k) return null;
+    if (k.startsWith("ur")) return "main";      // Main Read API Key
+    if (k.startsWith("m"))  return "monitor";   // Monitor-Specific API Key
+    return "unknown";
+  }
+
+  // Busca monitores da API do UptimeRobot
+  async function fetchMonitors(key) {
+    setLoading(true); setError("");
+    try {
+      const params = {
+        api_key: key,
+        format: "json",
+        logs: "1",
+        response_times: "1",
+        response_times_limit: "10",
+        custom_uptime_ratios: "7-30-90",
+      };
+      const res = await fetch("https://api.uptimerobot.com/v2/getMonitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(params).toString(),
+      });
+      const data = await res.json();
+      if (data.stat === "ok") {
+        setMonitors(data.monitors || []);
+        setLastCheck(new Date());
+        setError("");
+      } else {
+        const msg = data.error?.message || "";
+        if (msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("invalid")) {
+          setError("API Key inválida. Use a Monitor-Specific Key (m...) ou a Main API Key (ur...).");
+        } else {
+          setError("Erro: " + (msg || "Verifique a chave no UptimeRobot."));
+        }
+        setMonitors([]);
+      }
+    } catch(e) {
+      setError("Erro de rede. Verifique sua conexão ou tente novamente.");
+    }
+    setLoading(false);
+  }
+
+  // Salvar chave e buscar
+  function handleSaveKey() {
+    const k = inputKey.trim();
+    if (!k) return;
+    if (keyType(k) === "unknown") {
+      setError("Formato inválido. A chave deve começar com 'ur' (Main) ou 'm' (Monitor-Specific).");
+      return;
+    }
+    setError("");
+    localStorage.setItem(LS_KEY, k);
+    setApiKey(k);
+    setEditMode(false);
+    fetchMonitors(k);
+  }
+
+  // Auto-refresh a cada 60s
+  React.useEffect(() => {
+    if (!apiKey) return;
+    fetchMonitors(apiKey);
+    const t = setInterval(() => fetchMonitors(apiKey), 60000);
+    return () => clearInterval(t);
+  }, [apiKey]);
+
+  // Status label/cor
+  function statusInfo(st) {
+    if (st === 2)  return { label: "🟢 Online",       color: "#1A7A52", bg: "#e6f5ee" };
+    if (st === 9)  return { label: "🔴 Offline",      color: "#C0392B", bg: "#fdf0ee" };
+    if (st === 8)  return { label: "🟡 Instável",     color: "#9A6A00", bg: "#fff8e6" };
+    if (st === 0)  return { label: "⏸ Pausado",       color: "#666",    bg: "#f5f5f5" };
+    return           { label: "⚪ Verificando...",  color: "#888",    bg: "#f5f5f5" };
+  }
+
+  const GR = "#6fcf97";
+  const kt = keyType(apiKey);
+
+  return (
+    <div style={{background:"rgba(111,207,151,.06)",border:"1px solid rgba(111,207,151,.2)",borderRadius:12,padding:"16px 18px"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:13,fontWeight:700,color:GR}}>📡 Monitoramento — UptimeRobot</span>
+          {kt && !editMode && (
+            <span style={{fontSize:10,padding:"2px 7px",borderRadius:99,
+              background: kt==="monitor" ? "rgba(121,184,243,.15)" : "rgba(111,207,151,.15)",
+              color: kt==="monitor" ? "#79b8f3" : GR,
+              border: `1px solid ${kt==="monitor"?"rgba(121,184,243,.3)":"rgba(111,207,151,.3)"}`}}>
+              {kt==="monitor" ? "🔑 Monitor Key" : "🔑 Main Key"}
+            </span>
+          )}
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {lastCheck && (
+            <span style={{fontSize:10,color:"rgba(200,220,240,.5)"}}>
+              {lastCheck.toLocaleTimeString("pt-BR")}
+            </span>
+          )}
+          {apiKey && (
+            <button onClick={() => { setEditMode(true); setInputKey(apiKey); }}
+              style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(111,207,151,.3)",
+                background:"transparent",color:GR,cursor:"pointer",fontFamily:"inherit"}}>
+              ✏️ Editar
+            </button>
+          )}
+          {apiKey && !loading && (
+            <button onClick={() => fetchMonitors(apiKey)}
+              style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(111,207,151,.3)",
+                background:"transparent",color:GR,cursor:"pointer",fontFamily:"inherit"}}>
+              🔄
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Input de API Key */}
+      {editMode && (
+        <div style={{marginBottom:12}}>
+          {/* Instruções com as 2 opções de chave */}
+          <div style={{background:"rgba(0,0,0,.2)",borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:11}}>
+            <div style={{color:GR,fontWeight:700,marginBottom:6}}>Como obter sua API Key:</div>
+            <div style={{color:"rgba(200,220,240,.7)",marginBottom:4}}>
+              <strong style={{color:"#79b8f3"}}>Opção A — Monitor-Specific Key</strong> (recomendada, já criada):<br/>
+              UptimeRobot → My Settings → API → <em>Monitor-specific API keys</em> → copie a chave do monitor <code style={{color:"#E8C07A"}}>crm-3-pi.vercel.app</code>
+            </div>
+            <div style={{color:"rgba(200,220,240,.5)"}}>
+              <strong style={{color:"rgba(111,207,151,.7)"}}>Opção B — Main API Read Key</strong>:<br/>
+              UptimeRobot → My Settings → API Settings → Main API Key (começa com <code>ur...</code>)
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <input
+              value={inputKey}
+              onChange={e => setInputKey(e.target.value)}
+              placeholder="m802977392-... ou ur1234567-..."
+              style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid rgba(111,207,151,.3)",
+                background:"rgba(0,0,0,.2)",color:"#fff",fontSize:12,fontFamily:"monospace",outline:"none"}}
+              onKeyDown={e => e.key === "Enter" && handleSaveKey()}
+            />
+            <button onClick={handleSaveKey}
+              style={{padding:"8px 16px",borderRadius:8,border:"none",background:GR,
+                color:"#0d2137",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              Conectar
+            </button>
+          </div>
+          <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <a href="https://uptimerobot.com" target="_blank" rel="noreferrer"
+              style={{fontSize:11,color:GR,textDecoration:"none"}}>🔗 Abrir UptimeRobot</a>
+            <span style={{fontSize:11,color:"rgba(200,220,240,.35)"}}>·</span>
+            <span style={{fontSize:11,color:"rgba(200,220,240,.4)"}}>
+              Monitor criado: <strong style={{color:"rgba(200,220,240,.6)"}}>crm-3-pi.vercel.app</strong> · HTTP(s) · 5min
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div style={{textAlign:"center",padding:"16px 0",color:GR,fontSize:12}}>
+          ⏳ Consultando UptimeRobot...
+        </div>
+      )}
+
+      {/* Erro */}
+      {error && !loading && (
+        <div style={{padding:"10px 12px",background:"rgba(192,57,43,.12)",borderRadius:8,
+          fontSize:12,color:"#ffaaaa",marginBottom:8}}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* Monitores */}
+      {!loading && monitors.length > 0 && (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {monitors.map(m => {
+            const st = statusInfo(m.status);
+            const ratios = (m.custom_uptime_ratio || "").split("-");
+            const up7  = ratios[0] ? parseFloat(ratios[0]).toFixed(2) : "—";
+            const up30 = ratios[1] ? parseFloat(ratios[1]).toFixed(2) : "—";
+            const respTimes = m.response_times || [];
+            const avgResp   = respTimes.length > 0
+              ? Math.round(respTimes.reduce((a,b) => a + b.value, 0) / respTimes.length)
+              : null;
+
+            return (
+              <div key={m.id} style={{
+                background:"rgba(0,0,0,.2)",border:`1px solid ${st.color}30`,
+                borderLeft:`3px solid ${st.color}`,borderRadius:10,padding:"12px 14px"
+              }}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{m.friendly_name}</div>
+                    <div style={{fontSize:10,color:"rgba(200,220,240,.5)",marginTop:2,fontFamily:"monospace"}}>
+                      {m.url}
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,
+                    background:st.bg,color:st.color,border:`1px solid ${st.color}30`
+                  }}>{st.label}</span>
+                </div>
+
+                {/* Métricas */}
+                <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                  {[
+                    ["Uptime 7d",  `${up7}%`,  up7 >= 99 ? GR : "#E8C07A"],
+                    ["Uptime 30d", `${up30}%`, up30 >= 99 ? GR : "#E8C07A"],
+                    avgResp !== null ? ["Resp. média", `${avgResp}ms`, avgResp < 800 ? GR : "#E8C07A"] : null,
+                    ["Intervalo",  `${m.interval}min`, "rgba(200,220,240,.6)"],
+                  ].filter(Boolean).map(([lbl, val, clr]) => (
+                    <div key={lbl}>
+                      <div style={{fontSize:9,color:"rgba(200,220,240,.45)",textTransform:"uppercase",letterSpacing:".06em"}}>{lbl}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:clr}}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Sem API key */}
+      {!apiKey && !editMode && (
+        <div style={{textAlign:"center",padding:"16px 0",fontSize:12,color:"rgba(200,220,240,.5)"}}>
+          Nenhuma chave configurada.
+        </div>
+      )}
+
+      {/* Sem monitores */}
+      {!loading && apiKey && monitors.length === 0 && !error && (
+        <div style={{padding:"12px",fontSize:12,color:"rgba(200,220,240,.6)",textAlign:"center"}}>
+          Nenhum monitor encontrado. Crie um em{" "}
+          <a href="https://uptimerobot.com" target="_blank" rel="noreferrer" style={{color:GR}}>
+            uptimerobot.com
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function PageAdmin({usuario,users,setUsers}){
   const [tab,setTab]=useState("logs");
   const [showSenhas,setShowSenhas]=useState(false);
@@ -6426,26 +6688,8 @@ function PageAdmin({usuario,users,setUsers}){
                 ))}
               </div>
 
-              {/* UptimeRobot */}
-              <div style={{background:"rgba(111,207,151,.06)",border:"1px solid rgba(111,207,151,.2)",borderRadius:12,padding:"16px 18px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#6fcf97",marginBottom:10}}>📡 Monitoramento — UptimeRobot (Gratuito)</div>
-                {[
-                  ["1️⃣","Acesse uptimerobot.com → crie conta gratuita"],
-                  ["2️⃣","Clique em + Add New Monitor"],
-                  ["3️⃣","Tipo: HTTP(s) · URL: https://crm-3-pi.vercel.app"],
-                  ["4️⃣","Intervalo: 5 minutos · Nome: CRM Dra. Ilza"],
-                  ["5️⃣","Configure alerta por e-mail e/ou WhatsApp (Integrations)"],
-                  ["✅","Pronto! Recebe notificação se o site cair em até 5 min"],
-                ].map(([n,t])=>(
-                  <div key={n} style={{display:"flex",gap:10,marginBottom:8,fontSize:12,color:"rgba(200,220,240,.7)"}}>
-                    <span style={{flexShrink:0}}>{n}</span><span>{t}</span>
-                  </div>
-                ))}
-                <a href="https://uptimerobot.com" target="_blank" rel="noreferrer"
-                  style={{display:"inline-block",marginTop:8,background:"#6fcf97",color:"#0d2137",borderRadius:8,padding:"7px 16px",fontSize:12,fontWeight:800,textDecoration:"none"}}>
-                  🔗 Abrir UptimeRobot
-                </a>
-              </div>
+              {/* UptimeRobot — Widget real com API */}
+              <UptimeRobotWidget />
             </div>
           </div>
         )}
@@ -7390,9 +7634,50 @@ function PageHome({ setPage, usuario, pats: patsReal=[], consultas: consultasRea
             {(()=>{const d=new Date();const dias=["DOMINGO","SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA","SÁBADO"];const meses=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];return `${dias[d.getDay()]} · ${d.getDate()} DE ${meses[d.getMonth()]} DE ${d.getFullYear()}`;})()}
           </div>
           <div style={{ fontSize:30, fontWeight:800, color:"#fff",
-            letterSpacing:"-.03em", lineHeight:1.15, marginBottom:8 }}>
-            {(()=>{const h=new Date().getHours();const s=h<12?"Bom dia":h<18?"Boa tarde":"Boa noite";return `${s}, Dra. Ilza 👋`;})()}
+            letterSpacing:"-.03em", lineHeight:1.15, marginBottom:6 }}>
+            {(()=>{
+              const h = new Date().getHours();
+              const s = h<12?"Bom dia":h<18?"Boa tarde":"Boa noite";
+              const nome = usuario?.nome || "Dra. Ilza";
+              const primeiroNome = nome.split(" ")[0];
+              const isIlza = nome.toLowerCase().includes("ilza");
+              const isMedico = usuario?.role === "medico" || (usuario?.role === "admin" && isIlza);
+              const titulo = isMedico ? nome : primeiroNome;
+              return `${s}, ${titulo} 👋`;
+            })()}
           </div>
+          {/* ── Badge de sessão: role + @login + hora + método ── */}
+          {(()=>{
+            const roleLabels = { admin:"Administrador", medico:"Médico(a)", recepcao:"Recepção" };
+            const roleColors = { admin:"#E8C07A", medico:"#6fcf97", recepcao:"#79b8f3" };
+            const role = usuario?.role || "—";
+            const roleLabel = roleLabels[role] || role;
+            const roleColor = roleColors[role] || "#aaa";
+            const loginAt = usuario?.loginAt ? new Date(usuario.loginAt) : null;
+            const loginHora = loginAt
+              ? loginAt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})
+              : null;
+            const method = usuario?.certAutenticado ? "🔐 Certificado" : "🔑 Senha";
+            const uLogin = usuario?.u ? `@${usuario.u}` : "";
+            return (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+                <span style={{ fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:99,
+                  background:`${roleColor}22`, color:roleColor,
+                  border:`1px solid ${roleColor}44`, letterSpacing:".04em" }}>
+                  {roleLabel}
+                </span>
+                {uLogin && (
+                  <span style={{fontSize:11,color:"rgba(255,255,255,.45)",fontFamily:"monospace"}}>{uLogin}</span>
+                )}
+                {loginHora && (
+                  <span style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>
+                    · Sessão às <strong style={{color:"rgba(255,255,255,.6)"}}>{loginHora}</strong>
+                  </span>
+                )}
+                <span style={{fontSize:11,color:"rgba(255,255,255,.28)"}}>· {method}</span>
+              </div>
+            );
+          })()}
           <div style={{ fontSize:14, color:"rgba(255,255,255,.48)", marginBottom:24, maxWidth:480 }}>
             {consultasConfirmadas===0&&examesAgendados===0
               ?<span style={{color:"rgba(255,255,255,.38)"}}>{!loaded ? "Carregando dados..." : "Nenhum agendamento nos próximos 30 dias."}</span>
