@@ -9962,14 +9962,23 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
 
       fbAvailableRef.current = true;
       const isArr = Array.isArray(defaultValue);
-      const remoteHasData = isArr ? Array.isArray(val) : val !== null;
+
+      // Firebase RTDB retorna objeto {0:{...},1:{...}} quando salvo como array JS
+      // Normaliza para array antes de qualquer checagem
+      let normalized = val;
+      if (isArr && val !== null && typeof val === "object" && !Array.isArray(val)) {
+        normalized = Object.values(val).filter(Boolean);
+        console.info("[Firebase] Objeto→Array normalizado:", fbPath, "→", normalized.length, "itens");
+      }
+
+      const remoteHasData = isArr ? Array.isArray(normalized) : normalized !== null;
 
       if (remoteHasData) {
-        const hash = JSON.stringify(val);
+        const hash = JSON.stringify(normalized);
         if (hash !== lastHash) {
           lastHash = hash;
-          setData(val);
-          dataRef.current = val;
+          setData(normalized);
+          dataRef.current = normalized;
         }
       } else {
         // Firebase vazio → tenta migrar localStorage legado
