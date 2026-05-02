@@ -8932,7 +8932,7 @@ function PageSalaVirtual({ pats }) {
   // ── Ler arquivo e converter para base64 ──
   function lerArquivo(file) {
     return new Promise((res, rej) => {
-      if (file.size > 3 * 1024 * 1024) { rej(new Error("Arquivo maior que 3MB")); return; }
+      if (file.size > 5 * 1024 * 1024) { rej(new Error("Arquivo maior que 5MB")); return; }
       const reader = new FileReader();
       reader.onload  = () => res(reader.result);
       reader.onerror = rej;
@@ -9334,7 +9334,7 @@ function PageSalaVirtual({ pats }) {
                           <span style={{ fontSize:20 }}>{getFileIcon(m.fileName)}</span>
                           <div>
                             <div style={{ fontWeight:600, color:isDra?"#fff":T.tx }}>{m.fileName||"Arquivo"}</div>
-                            <div style={{ fontSize:10, opacity:.7 }}>Arquivo muito grande para visualizar</div>
+                            <div style={{ fontSize:10, opacity:.7 }}>Arquivo maior que 5MB</div>
                           </div>
                         </div>
                       )}
@@ -9376,7 +9376,7 @@ function PageSalaVirtual({ pats }) {
           <input ref={fileRef} type="file" style={{ display:"none" }}
             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
             onChange={onAnexoChange} />
-          <button onClick={()=>fileRef.current?.click()} title="Anexar arquivo (máx 3MB)"
+          <button onClick={()=>fileRef.current?.click()} title="Anexar arquivo (máx 5MB)"
             style={{ width:42, height:42, borderRadius:11, border:`1.5px solid ${T.br}`,
               background:T.sur2, cursor:"pointer", display:"flex", alignItems:"center",
               justifyContent:"center", flexShrink:0, transition:"all .15s" }}
