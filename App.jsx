@@ -3487,6 +3487,110 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
   );
 }
 
+// ─── PopupEditarExame — modal de edição ao dar duplo clique no card ──────────
+function PopupEditarExame({ exame, onClose, onSave }) {
+  const [pac,  setPac]  = useState(exame.pac  || "");
+  const [tipo, setTipo] = useState(exame.tipo || "");
+  const [dt,   setDt]   = useState(exame.dt   || "");
+  const [st,   setSt]   = useState(exame.st   || "Agendado");
+  const [obs,  setObs]  = useState(exame.obs  || "");
+  const [tipoOpen, setTipoOpen] = useState(false);
+  const [tipoQ,    setTipoQ]   = useState(exame.tipo || "");
+  const tipoRef = useRef();
+
+  const STATUSES = ["Agendado", "Realizado", "Cancelado", "Pendente", "Aguardando"];
+  const filteredTipos = EXAMES_LISTA.filter(e =>
+    e.toLowerCase().includes(tipoQ.toLowerCase())
+  ).slice(0, 8);
+
+  useEffect(() => {
+    function h(e) { if (tipoRef.current && !tipoRef.current.contains(e.target)) setTipoOpen(false); }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  function handleSave() {
+    if (!pac.trim() || !tipo.trim()) { alert("Paciente e tipo do exame são obrigatórios."); return; }
+    onSave({ ...exame, pac, tipo, dt, st, obs });
+    onClose();
+  }
+
+  const statusColor = { Agendado:"#1A5FA8", Realizado:"#1A7A52", Cancelado:"#C0392B", Pendente:"#9A6A00", Aguardando:"#7A5018" };
+
+  return (
+    <Modal title="✏️ Editar Exame" onClose={onClose} width={520}>
+      {/* Paciente — somente leitura (referência) */}
+      <Fld label="Paciente">
+        <input style={{ ...inp, background:T.sur2, color:T.txM, fontWeight:600 }}
+          value={pac} onChange={e => setPac(e.target.value)} />
+      </Fld>
+
+      {/* Tipo do exame — dropdown com busca */}
+      <Fld label="Tipo de exame">
+        <div ref={tipoRef} style={{ position:"relative" }}>
+          <input style={{ ...inp, borderColor: tipo ? T.b : T.br }}
+            value={tipoQ}
+            placeholder="Buscar ou digitar exame..."
+            onChange={e => { setTipoQ(e.target.value); setTipo(e.target.value); setTipoOpen(true); }}
+            onFocus={() => setTipoOpen(true)} />
+          {tipoOpen && filteredTipos.length > 0 && (
+            <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:T.sur,
+              border:`1.5px solid ${T.b}40`, borderRadius:10, boxShadow:"0 8px 24px rgba(13,31,58,.12)",
+              zIndex:9999, maxHeight:200, overflowY:"auto" }}>
+              {filteredTipos.map(t => (
+                <div key={t}
+                  onClick={() => { setTipo(t); setTipoQ(t); setTipoOpen(false); }}
+                  style={{ padding:"9px 14px", fontSize:13, cursor:"pointer",
+                    background: t === tipo ? T.bL : "transparent",
+                    color: t === tipo ? T.b : T.tx, fontWeight: t === tipo ? 600 : 400,
+                    borderBottom:`1px solid ${T.br}40` }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.sur2}
+                  onMouseLeave={e => e.currentTarget.style.background = t === tipo ? T.bL : "transparent"}>
+                  {t}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Fld>
+
+      {/* Data */}
+      <Fld label="Data agendada">
+        <input type="date" style={inp} value={dt} onChange={e => setDt(e.target.value)} />
+      </Fld>
+
+      {/* Status */}
+      <Fld label="Status">
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          {STATUSES.map(s => (
+            <button key={s} onClick={() => setSt(s)}
+              style={{ padding:"7px 16px", borderRadius:99, border:"1.5px solid",
+                borderColor: st === s ? statusColor[s] || T.b : T.br,
+                background: st === s ? (statusColor[s] || T.b) + "18" : T.sur,
+                color: st === s ? statusColor[s] || T.b : T.txM,
+                fontWeight: st === s ? 700 : 500, fontSize:12.5, cursor:"pointer",
+                transition:"all .15s" }}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </Fld>
+
+      {/* Observações */}
+      <Fld label="Observações">
+        <textarea style={{ ...inp, minHeight:76, resize:"vertical" }}
+          value={obs} onChange={e => setObs(e.target.value)}
+          placeholder="Ex.: preparo necessário, laboratório, convênio..." />
+      </Fld>
+
+      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:6 }}>
+        <Btn onClick={onClose} variant="ghost">Cancelar</Btn>
+        <Btn onClick={handleSave} icon="check">Salvar alterações</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── PAGE: EXAMES — SEM avatar de paciente nos cards ─────────────────────────
 
 // ─── Sub-componentes de linha/card (hooks devem estar fora de .map()) ────────
@@ -3545,14 +3649,24 @@ function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
   );
 }
 
-function ExameCard({ e, usuario, onDelete }) {
-  const [tip, setTip] = useState(false);
-  const [pos, setPos] = useState({ x:0, y:0 });
+function ExameCard({ e, usuario, onDelete, onEdit }) {
+  const [tip,     setTip]     = useState(false);
+  const [pos,     setPos]     = useState({ x:0, y:0 });
+  const [editing, setEditing] = useState(false);
   const { c:ac, bg:abg } = examAccent(e.tipo);
   const role = usuario?.role ?? window._crmUsuario?.role;
   return (
+    <>
+    {editing && (
+      <PopupEditarExame
+        exame={e}
+        onClose={() => setEditing(false)}
+        onSave={updated => { onEdit && onEdit(updated); setEditing(false); }} />
+    )}
     <div style={{ background:T.sur, border:`1px solid ${T.br}`,
       borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer", position:"relative" }}
+      onDoubleClick={() => setEditing(true)}
+      title="Duplo clique para editar"
       onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; setTip(true); const r=el.currentTarget.getBoundingClientRect(); setPos({x:r.left,y:r.top}); }}
       onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; setTip(false); }}>
       <div style={{ height:4, background:`linear-gradient(90deg,${ac},${ac}55)` }} />
@@ -3592,10 +3706,12 @@ function ExameCard({ e, usuario, onDelete }) {
           <div>📅 Data: <strong>{e.dt}</strong></div>
           <div>📊 Status: <strong>{e.st}</strong></div>
           {e.obs && <div>📝 Obs: <strong>{e.obs}</strong></div>}
+          <div style={{ fontSize:10, opacity:.5, textAlign:"center", marginTop:6 }}>⬆ Duplo clique para editar</div>
         </div>,
         document.body
       )}
     </div>
+    </>
   );
 }
 
@@ -4298,7 +4414,8 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(268px,1fr))", gap:14 }}>
         {filtered.map(e => (
           <ExameCard key={e.id} e={e} usuario={usuario}
-            onDelete={()=>setExames(p=>p.filter(x=>x.id!==e.id))} />
+            onDelete={()=>setExames(p=>p.filter(x=>x.id!==e.id))}
+            onEdit={updated=>setExames(p=>p.map(x=>x.id===updated.id?updated:x))} />
         ))}
         {/* Add card */}
         <div onClick={()=>setShowNew(true)}
@@ -9886,9 +10003,6 @@ async function fbWrite(path, value) {
 }
 
 async function fbRead(path) {
-  // Retorna:
-  //   null      → path existe mas está vazio/null (comportamento normal do Firebase)
-  //   undefined → erro real: 401, rede offline, fetch falhou
   try {
     const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`, {
       cache: "no-store",
@@ -9901,14 +10015,14 @@ async function fbRead(path) {
           "\n→ Regra mínima necessária: \"crm_data\": { \".read\": true, \".write\": true }");
         _fbOfflineLogged = true;
       }
-      return undefined; // erro de autenticação — Firebase inacessível
+      return null;
     }
-    if (!r.ok) return undefined; // outro erro HTTP — Firebase inacessível
+    if (!r.ok) return null;
     _fbOfflineLogged = false;
-    return await r.json(); // pode ser null (path vazio) — isso é válido!
+    return await r.json();
   } catch(e) {
     console.warn("[Firebase] Erro de rede (read):", e.message);
-    return undefined; // rede offline — Firebase inacessível
+    return null;
   }
 }
 
@@ -9952,9 +10066,7 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
       const val = await fbRead(fbPath);
       if (!active) return;
 
-      // undefined = erro real (rede, 401) — marca offline e aguarda próximo ciclo
-      // null = path vazio no Firebase — Firebase está OK, apenas sem dados ainda
-      if (val === undefined) {
+      if (val === null) {
         fbAvailableRef.current = false;
         if (!loaded) setLoaded(true);
         return;
@@ -10003,7 +10115,7 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
         if (!ok) console.warn("[Firebase] Falha ao salvar:", fbPath);
       });
     } else {
-      console.warn("[Firebase] OFFLINE — Firebase inacessível, dado não salvo:", fbPath, "\n→ Verifique sua conexão ou as regras do Firebase.");
+      console.warn("[Firebase] OFFLINE — dado não salvo (localStorage desativado):", fbPath);
     }
   }, [fbPath]); // eslint-disable-line
 
@@ -10027,8 +10139,7 @@ function useFirebaseSync() {
       const readOk = await fbRead("crm_data/crm_last_sync");
       if (!active) return;
 
-      // readOk !== undefined = Firebase acessível (mesmo que path esteja null/vazio)
-      if (readOk !== undefined) {
+      if (readOk !== null) {
         const writeOk = await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
         if (!active) return;
         if (writeOk) {
