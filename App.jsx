@@ -3034,7 +3034,7 @@ Equipe Dra. Ilza Ezequiel`
    PÁGINA PRONTUÁRIO ELETRÔNICO (ex-Pacientes)
 ════════════════════════════════════════════════════════════════ */
 
-function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, setPats }) {
+function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, setPage, setPacFiltro, setPats }) {
   const [tab, setTab] = useState("info");
   // AutoSave: salva 2s após última edição
   const autoTimer = useRef(null);
@@ -3050,6 +3050,7 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
   const [prontuarios, setProntuarios] = useState(mockProntuarios[pac.id] || []);
   const [showAddPront, setShowAddPront] = useState(false);
   const [prontForm, setProntForm] = useState({ tipo:"Consulta", resumo:"" });
+  const [exameDetalhe, setExameDetalhe] = useState(null); // exame aberto para detalhe/anexo
 
   const meusExames = allExames.filter(e => e.pac === pac.nm);
   const abcColor = { A:T.gr, B:T.b, C:T.txM };
@@ -3245,6 +3246,12 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
       )}
 
       {/* ── Tab: Exames */}
+      {exameDetalhe && (
+        <PopupDetalheExame
+          exame={exameDetalhe}
+          onClose={()=>setExameDetalhe(null)}
+          onUpdate={upd=>{ onUpdateExame && onUpdateExame(upd); setExameDetalhe(null); }} />
+      )}
       {tab==="exames" && (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           {meusExames.length === 0 ? (
@@ -3254,9 +3261,16 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
             </div>
           ) : meusExames.map(e => {
             const { c:ac, bg:abg } = examAccent(e.tipo);
+            const temAnexo = !!e.arquivo;
             return (
-              <div key={e.id} style={{ display:"flex", alignItems:"center", gap:12,
-                padding:"12px 14px", background:T.sur2, borderRadius:12, border:`1px solid ${T.br}` }}>
+              <div key={e.id}
+                onClick={()=>setExameDetalhe(e)}
+                style={{ display:"flex", alignItems:"center", gap:12,
+                  padding:"12px 14px", background:T.sur2, borderRadius:12,
+                  border:`1.5px solid ${temAnexo ? T.grBr : T.br}`,
+                  cursor:"pointer", transition:"all .15s" }}
+                onMouseEnter={el=>{ el.currentTarget.style.borderColor=ac; el.currentTarget.style.background=T.sur; }}
+                onMouseLeave={el=>{ el.currentTarget.style.borderColor=temAnexo?T.grBr:T.br; el.currentTarget.style.background=T.sur2; }}>
                 <div style={{ width:36, height:36, borderRadius:9, background:abg,
                   flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   <Ic n="exam" sz={16} c={ac} />
@@ -3264,12 +3278,14 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:T.tx,
                     whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{e.tipo}</div>
-                  <div style={{ fontSize:11, color:T.txS, marginTop:2, display:"flex", gap:8 }}>
+                  <div style={{ fontSize:11, color:T.txS, marginTop:2, display:"flex", gap:8, alignItems:"center" }}>
                     <span>{e.dt||"Sem data"}</span>
                     {e.obs && <span style={{ color:T.txM }}>· {e.obs}</span>}
+                    {temAnexo && <span style={{ color:T.gr, fontWeight:700 }}>📎 {e.arquivoNome}</span>}
                   </div>
                 </div>
                 {stBadge(e.st)}
+                <span style={{ fontSize:11, color:T.txS, flexShrink:0 }}>›</span>
               </div>
             );
           })}
@@ -3487,88 +3503,84 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
   );
 }
 
-// ─── PopupEditarExame — modal de edição ao dar duplo clique no card ──────────
-function PopupEditarExame({ exame, onClose, onSave }) {
-  const [pac,  setPac]  = useState(exame.pac  || "");
-  const [tipo, setTipo] = useState(exame.tipo || "");
-  const [dt,   setDt]   = useState(exame.dt   || "");
-  const [st,   setSt]   = useState(exame.st   || "Agendado");
-  const [obs,  setObs]  = useState(exame.obs  || "");
-  const [tipoOpen, setTipoOpen] = useState(false);
-  const [tipoQ,    setTipoQ]   = useState(exame.tipo || "");
-  const tipoRef = useRef();
+// ─── helpers de arquivo (globais para uso fora do CRM) ──────────────────────
+function fileIcon(name=""){
+  const ext=(name||"").split(".").pop().toLowerCase();
+  if(ext==="pdf")return "📕";
+  if(["doc","docx"].includes(ext))return "📘";
+  if(["xls","xlsx"].includes(ext))return "📗";
+  if(["png","jpg","jpeg","gif","webp"].includes(ext))return "🖼️";
+  return "📎";
+}
+function downloadB64(dataUrl, fileName){
+  const a=document.createElement("a"); a.href=dataUrl; a.download=fileName||"arquivo";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
 
-  const STATUSES = ["Agendado", "Realizado", "Cancelado", "Pendente", "Aguardando"];
-  const filteredTipos = EXAMES_LISTA.filter(e =>
-    e.toLowerCase().includes(tipoQ.toLowerCase())
-  ).slice(0, 8);
+// ─── PopupDetalheExame — visualiza + anexa resultado do exame ────────────────
+function PopupDetalheExame({ exame, onClose, onUpdate }) {
+  const [st,     setSt]     = useState(exame.st   || "Agendado");
+  const [obs,    setObs]    = useState(exame.obs  || "");
+  const [arquivo, setArquivo] = useState(
+    exame.arquivo ? { name: exame.arquivoNome, dataUrl: exame.arquivo } : null
+  );
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef();
+  const isRealizado = st === "Realizado";
 
-  useEffect(() => {
-    function h(e) { if (tipoRef.current && !tipoRef.current.contains(e.target)) setTipoOpen(false); }
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
+  const STATUSES = ["Agendado","Realizado","Cancelado","Pendente","Aguardando"];
+  const statusColor = {
+    Agendado:"#1A5FA8", Realizado:"#1A7A52",
+    Cancelado:"#C0392B", Pendente:"#9A6A00", Aguardando:"#7A5018"
+  };
+
+  function handleFile(e) {
+    const f = e.target.files[0]; if(!f) return;
+    if(f.size > 8 * 1024 * 1024) { alert("Arquivo muito grande. Máximo 8MB."); return; }
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = ev => { setArquivo({ name: f.name, dataUrl: ev.target.result }); setLoading(false); };
+    reader.readAsDataURL(f);
+  }
 
   function handleSave() {
-    if (!pac.trim() || !tipo.trim()) { alert("Paciente e tipo do exame são obrigatórios."); return; }
-    onSave({ ...exame, pac, tipo, dt, st, obs });
+    const updated = {
+      ...exame, st, obs,
+      arquivo:     arquivo ? arquivo.dataUrl : null,
+      arquivoNome: arquivo ? arquivo.name    : null,
+    };
+    onUpdate && onUpdate(updated);
     onClose();
   }
 
-  const statusColor = { Agendado:"#1A5FA8", Realizado:"#1A7A52", Cancelado:"#C0392B", Pendente:"#9A6A00", Aguardando:"#7A5018" };
+  const isImg = arquivo && (arquivo.dataUrl?.startsWith("data:image") ||
+    /\.(png|jpg|jpeg|gif|webp)$/i.test(arquivo.name||""));
+  const isPdf = arquivo && (arquivo.dataUrl?.startsWith("data:application/pdf") ||
+    /\.pdf$/i.test(arquivo.name||""));
 
   return (
-    <Modal title="✏️ Editar Exame" onClose={onClose} width={520}>
-      {/* Paciente — somente leitura (referência) */}
-      <Fld label="Paciente">
-        <input style={{ ...inp, background:T.sur2, color:T.txM, fontWeight:600 }}
-          value={pac} onChange={e => setPac(e.target.value)} />
-      </Fld>
-
-      {/* Tipo do exame — dropdown com busca */}
-      <Fld label="Tipo de exame">
-        <div ref={tipoRef} style={{ position:"relative" }}>
-          <input style={{ ...inp, borderColor: tipo ? T.b : T.br }}
-            value={tipoQ}
-            placeholder="Buscar ou digitar exame..."
-            onChange={e => { setTipoQ(e.target.value); setTipo(e.target.value); setTipoOpen(true); }}
-            onFocus={() => setTipoOpen(true)} />
-          {tipoOpen && filteredTipos.length > 0 && (
-            <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:T.sur,
-              border:`1.5px solid ${T.b}40`, borderRadius:10, boxShadow:"0 8px 24px rgba(13,31,58,.12)",
-              zIndex:9999, maxHeight:200, overflowY:"auto" }}>
-              {filteredTipos.map(t => (
-                <div key={t}
-                  onClick={() => { setTipo(t); setTipoQ(t); setTipoOpen(false); }}
-                  style={{ padding:"9px 14px", fontSize:13, cursor:"pointer",
-                    background: t === tipo ? T.bL : "transparent",
-                    color: t === tipo ? T.b : T.tx, fontWeight: t === tipo ? 600 : 400,
-                    borderBottom:`1px solid ${T.br}40` }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.sur2}
-                  onMouseLeave={e => e.currentTarget.style.background = t === tipo ? T.bL : "transparent"}>
-                  {t}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Fld>
-
-      {/* Data */}
-      <Fld label="Data agendada">
-        <input type="date" style={inp} value={dt} onChange={e => setDt(e.target.value)} />
-      </Fld>
+    <Modal title={`🔬 ${exame.tipo}`} onClose={onClose} width={540}>
+      {/* Cabeçalho info */}
+      <div style={{ background:T.sur2, border:`1px solid ${T.br}`, borderRadius:12,
+        padding:"12px 16px", marginBottom:18, display:"flex", gap:16, flexWrap:"wrap" }}>
+        <div><div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase",
+          letterSpacing:".07em", marginBottom:3 }}>Paciente</div>
+          <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{exame.pac}</div></div>
+        <div><div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase",
+          letterSpacing:".07em", marginBottom:3 }}>Data</div>
+          <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{exame.dt||"—"}</div></div>
+      </div>
 
       {/* Status */}
       <Fld label="Status">
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {STATUSES.map(s => (
-            <button key={s} onClick={() => setSt(s)}
+            <button key={s} onClick={()=>setSt(s)}
               style={{ padding:"7px 16px", borderRadius:99, border:"1.5px solid",
-                borderColor: st === s ? statusColor[s] || T.b : T.br,
-                background: st === s ? (statusColor[s] || T.b) + "18" : T.sur,
-                color: st === s ? statusColor[s] || T.b : T.txM,
-                fontWeight: st === s ? 700 : 500, fontSize:12.5, cursor:"pointer",
+                borderColor: st===s ? statusColor[s]||T.b : T.br,
+                background:  st===s ? (statusColor[s]||T.b)+"18" : T.sur,
+                color:       st===s ? statusColor[s]||T.b : T.txM,
+                fontWeight:  st===s ? 700 : 500, fontSize:12.5, cursor:"pointer",
                 transition:"all .15s" }}>
               {s}
             </button>
@@ -3578,14 +3590,80 @@ function PopupEditarExame({ exame, onClose, onSave }) {
 
       {/* Observações */}
       <Fld label="Observações">
-        <textarea style={{ ...inp, minHeight:76, resize:"vertical" }}
-          value={obs} onChange={e => setObs(e.target.value)}
+        <textarea style={{ ...inp, minHeight:64, resize:"vertical" }}
+          value={obs} onChange={e=>setObs(e.target.value)}
           placeholder="Ex.: preparo necessário, laboratório, convênio..." />
       </Fld>
 
+      {/* ── Área de Anexo ── */}
+      <Fld label={`Resultado / Laudo ${arquivo?"(anexado)":"(opcional)"}`}>
+        {arquivo ? (
+          <div style={{ border:`1.5px solid ${T.grBr}`, borderRadius:12,
+            background:T.grB, padding:"14px 16px" }}>
+            {/* Preview imagem */}
+            {isImg && (
+              <img src={arquivo.dataUrl} alt={arquivo.name}
+                style={{ width:"100%", maxHeight:220, objectFit:"contain",
+                  borderRadius:8, marginBottom:10, cursor:"pointer" }}
+                onClick={()=>downloadB64(arquivo.dataUrl, arquivo.name)} />
+            )}
+            {/* Preview PDF inline */}
+            {isPdf && (
+              <iframe src={arquivo.dataUrl} title={arquivo.name}
+                style={{ width:"100%", height:200, borderRadius:8,
+                  border:`1px solid ${T.br}`, marginBottom:10 }} />
+            )}
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:22 }}>{fileIcon(arquivo.name)}</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:T.gr,
+                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {arquivo.name}
+                </div>
+                <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>
+                  Arquivo anexado · clique para baixar
+                </div>
+              </div>
+              <button onClick={()=>downloadB64(arquivo.dataUrl, arquivo.name)}
+                style={{ padding:"6px 12px", borderRadius:8, border:`1px solid ${T.grBr}`,
+                  background:T.sur, color:T.gr, fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                ⬇ Baixar
+              </button>
+              <button onClick={()=>{ setArquivo(null); if(fileRef.current) fileRef.current.value=""; }}
+                style={{ width:28, height:28, borderRadius:7, border:"none",
+                  background:T.reB, color:T.re, cursor:"pointer", fontSize:14,
+                  display:"flex", alignItems:"center", justifyContent:"center" }}>
+                ✕
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div onClick={()=>fileRef.current?.click()}
+            style={{ border:`2px dashed ${T.brD}`, borderRadius:12,
+              padding:"22px 16px", textAlign:"center", cursor:"pointer",
+              transition:"all .2s", background:T.sur }}
+            onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.b; e.currentTarget.style.background=T.bL; }}
+            onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.brD; e.currentTarget.style.background=T.sur; }}>
+            {loading
+              ? <div style={{ color:T.txS, fontSize:13 }}>⏳ Carregando arquivo...</div>
+              : <>
+                  <div style={{ fontSize:28, marginBottom:6 }}>📎</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.txM, marginBottom:3 }}>
+                    Clique para anexar o laudo / resultado
+                  </div>
+                  <div style={{ fontSize:11, color:T.txS }}>PDF, imagem — máx. 8MB</div>
+                </>
+            }
+          </div>
+        )}
+        <input ref={fileRef} type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx"
+          style={{ display:"none" }} onChange={handleFile} />
+      </Fld>
+
       <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:6 }}>
-        <Btn onClick={onClose} variant="ghost">Cancelar</Btn>
-        <Btn onClick={handleSave} icon="check">Salvar alterações</Btn>
+        <Btn onClick={onClose} variant="ghost">Fechar</Btn>
+        <Btn onClick={handleSave} icon="check">Salvar</Btn>
       </div>
     </Modal>
   );
@@ -3649,24 +3727,14 @@ function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
   );
 }
 
-function ExameCard({ e, usuario, onDelete, onEdit }) {
-  const [tip,     setTip]     = useState(false);
-  const [pos,     setPos]     = useState({ x:0, y:0 });
-  const [editing, setEditing] = useState(false);
+function ExameCard({ e, usuario, onDelete }) {
+  const [tip, setTip] = useState(false);
+  const [pos, setPos] = useState({ x:0, y:0 });
   const { c:ac, bg:abg } = examAccent(e.tipo);
   const role = usuario?.role ?? window._crmUsuario?.role;
   return (
-    <>
-    {editing && (
-      <PopupEditarExame
-        exame={e}
-        onClose={() => setEditing(false)}
-        onSave={updated => { onEdit && onEdit(updated); setEditing(false); }} />
-    )}
     <div style={{ background:T.sur, border:`1px solid ${T.br}`,
       borderRadius:16, overflow:"hidden", transition:"all .2s", cursor:"pointer", position:"relative" }}
-      onDoubleClick={() => setEditing(true)}
-      title="Duplo clique para editar"
       onMouseEnter={el=>{ el.currentTarget.style.boxShadow="0 14px 36px rgba(44,26,8,.11)"; el.currentTarget.style.transform="translateY(-2px)"; el.currentTarget.style.borderColor=ac+"44"; setTip(true); const r=el.currentTarget.getBoundingClientRect(); setPos({x:r.left,y:r.top}); }}
       onMouseLeave={el=>{ el.currentTarget.style.boxShadow="none"; el.currentTarget.style.transform="translateY(0)"; el.currentTarget.style.borderColor=T.br; setTip(false); }}>
       <div style={{ height:4, background:`linear-gradient(90deg,${ac},${ac}55)` }} />
@@ -3706,12 +3774,10 @@ function ExameCard({ e, usuario, onDelete, onEdit }) {
           <div>📅 Data: <strong>{e.dt}</strong></div>
           <div>📊 Status: <strong>{e.st}</strong></div>
           {e.obs && <div>📝 Obs: <strong>{e.obs}</strong></div>}
-          <div style={{ fontSize:10, opacity:.5, textAlign:"center", marginTop:6 }}>⬆ Duplo clique para editar</div>
         </div>,
         document.body
       )}
     </div>
-    </>
   );
 }
 
@@ -4414,8 +4480,7 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(268px,1fr))", gap:14 }}>
         {filtered.map(e => (
           <ExameCard key={e.id} e={e} usuario={usuario}
-            onDelete={()=>setExames(p=>p.filter(x=>x.id!==e.id))}
-            onEdit={updated=>setExames(p=>p.map(x=>x.id===updated.id?updated:x))} />
+            onDelete={()=>setExames(p=>p.filter(x=>x.id!==e.id))} />
         ))}
         {/* Add card */}
         <div onClick={()=>setShowNew(true)}
