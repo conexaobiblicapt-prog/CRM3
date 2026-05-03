@@ -850,6 +850,262 @@ function auditAdd(u, a, d) {
 const fmtMoeda=v=>`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
 
 /* ════════════════════════════════════════════════════════════════
+   BRIDGE CRM ↔ SALA VIRTUAL  (v22)
+   Integrado no App principal — não duplica os helpers Firebase
+════════════════════════════════════════════════════════════════ */
+
+// Helper para chave Firebase a partir do e-mail
+function emailKey(email) {
+  return (email || "").toLowerCase().replace(/\./g, ",").replace(/@/g, "_at_");
+}
+
+// Aliases que reutilizam as funções REST já existentes no arquivo
+const FB_URL_BRIDGE = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+async function fbBridgeGet(path) {
+  try {
+    const r = await fetch(`${FB_URL_BRIDGE}/${path}.json`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) { return null; }
+}
+async function fbBridgePut(path, value) {
+  try {
+    const r = await fetch(`${FB_URL_BRIDGE}/${path}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+    return r.ok;
+  } catch(e) { return false; }
+}
+
+// Valida se o paciente tem cadastro completo para acessar a Sala Virtual
+function svValidarCadastroCompleto(pac) {
+  const faltando = [];
+  if (!pac) return { valido: false, faltando: ["Cadastro não encontrado"] };
+  if (!pac.nm?.trim())    faltando.push("Nome completo");
+  if (!pac.cpf?.trim())   faltando.push("CPF");
+  if (!pac.email?.trim()) faltando.push("E-mail");
+  const nasc = pac.nasc || pac.dob || pac.dn || pac.dataNasc || "";
+  if (!nasc) faltando.push("Data de nascimento");
+  return { valido: faltando.length === 0, faltando };
+}
+
+/* ── BadgeCadastroCompleto — badge visual para listagem de pacientes ── */
+function BadgeCadastroCompleto({ pac }) {
+  const v = svValidarCadastroCompleto(pac);
+  if (v.valido) {
+    return (
+      <span style={{
+        background:"#E6F5EE", color:"#1A7A52", border:"1px solid #86C9A4",
+        borderRadius:99, padding:"2px 8px", fontSize:9, fontWeight:700,
+      }}>✅ Portal OK</span>
+    );
+  }
+  return (
+    <span title={`Faltando: ${v.faltando.join(", ")}`} style={{
+      background:"#FFF8E6", color:"#9A6A00", border:"1px solid #F0C060",
+      borderRadius:99, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"help",
+    }}>⚠️ Incompleto</span>
+  );
+}
+
+/* ── SenhaPortalSection — exibe credenciais de acesso na aba Portal ── */
+function SenhaPortalSection({ pac, usuario }) {
+  const isAdmin = ["admin", "medico"].includes(usuario?.role);
+  const [sincOk, setSincOk] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+
+  const cpfNumeros = (pac.cpf || "").replace(/\D/g, "");
+  const validacao = svValidarCadastroCompleto(pac);
+
+  async function sincronizarCRM() {
+    if (!pac.email) { setSincOk({ tipo:"err", txt:"Paciente sem e-mail — não pode sincronizar." }); return; }
+    if (!validacao.valido) { setSincOk({ tipo:"err", txt:`Cadastro incompleto: ${validacao.faltando.join(", ")}` }); return; }
+    setSalvando(true);
+    const key    = emailKey(pac.email);
+    const crmId  = pac.id || key;
+    const ts     = new Date().toISOString();
+    const portalUser = await fbBridgeGet(`sv_portal/users/${key}`) || {};
+    await fbBridgePut(`sv_portal/users/${key}`, {
+      ...portalUser,
+      email: pac.email, nm: pac.nm, cpf: pac.cpf || "",
+      nasc:  pac.nasc || pac.dob || "", tel: pac.tel || pac.whatsapp || "",
+      plano: pac.plano || "", crmPacId: crmId, role: "paciente", updatedAt: ts,
+    });
+    setSalvando(false);
+    setSincOk({ tipo:"ok", txt:"✅ Dados sincronizados com a Sala Virtual!" });
+  }
+
+  if (!pac.email) {
+    return (
+      <div style={{ background:"#FFF8E6", border:"1px solid #F0C060", borderRadius:12, padding:"14px 16px" }}>
+        <div style={{ fontSize:13, fontWeight:700, color:T.am, marginBottom:4 }}>⚠️ Sem acesso à Sala Virtual</div>
+        <div style={{ fontSize:12, color:T.txM }}>
+          Este paciente não tem e-mail cadastrado. Adicione um e-mail para liberar o acesso.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      {!validacao.valido && (
+        <div style={{ background:T.reB, border:`1.5px solid ${T.reBr}`, borderRadius:12, padding:"14px 16px" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:T.re, marginBottom:6 }}>
+            🚫 Cadastro incompleto — Acesso bloqueado
+          </div>
+          {validacao.faltando.map(f => (
+            <div key={f} style={{ fontSize:12, color:T.re, display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+              <span>⚠️</span> {f}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background:T.grB, border:`1.5px solid ${T.grBr}`, borderRadius:12, padding:"18px 20px" }}>
+        <div style={{ fontSize:12, fontWeight:700, color:T.gr, textTransform:"uppercase", letterSpacing:".07em", marginBottom:14 }}>
+          🔑 Credenciais de Acesso à Sala Virtual
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ background:"#fff", border:`1px solid ${T.grBr}`, borderRadius:10, padding:"12px 14px" }}>
+            <div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase", letterSpacing:".07em", marginBottom:4 }}>Login (E-mail)</div>
+            <div style={{ fontSize:13, fontWeight:600, color:T.tx, fontFamily:"monospace" }}>{pac.email}</div>
+          </div>
+          <div style={{ background:"#fff", border:`1px solid ${T.grBr}`, borderRadius:10, padding:"12px 14px" }}>
+            <div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase", letterSpacing:".07em", marginBottom:4 }}>
+              Senha — CPF (somente números)
+            </div>
+            {isAdmin ? (
+              <div style={{ fontSize:15, fontWeight:700, color:T.b, fontFamily:"monospace", letterSpacing:".05em" }}>
+                {cpfNumeros || <span style={{ color:T.am }}>⚠️ CPF não cadastrado</span>}
+              </div>
+            ) : (
+              <div style={{ fontSize:13, color:T.txM }}>
+                Seu CPF cadastrado (somente dígitos, sem pontos ou traço)
+              </div>
+            )}
+            {pac.cpf && (
+              <div style={{ fontSize:11, color:T.txS, marginTop:4 }}>CPF formatado: {pac.cpf}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background:T.sur2, border:`1px solid ${T.br}`, borderRadius:12, padding:"14px 16px" }}>
+        <div style={{ fontSize:11, fontWeight:700, color:T.txM, textTransform:"uppercase", letterSpacing:".07em", marginBottom:8 }}>
+          ℹ️ Como funciona
+        </div>
+        <div style={{ fontSize:12, color:T.txM, lineHeight:1.7 }}>
+          A autenticação é automática. O paciente usa o <strong>e-mail</strong> como login
+          e o <strong>CPF (somente dígitos)</strong> como senha.
+        </div>
+        {!cpfNumeros && (
+          <div style={{ marginTop:10, background:"#FFF8E6", border:`1px solid ${T.amBr}`, borderRadius:9, padding:"10px 12px", fontSize:12, color:T.am }}>
+            ⚠️ CPF não cadastrado. Adicione o CPF para liberar o acesso à Sala Virtual.
+          </div>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {sincOk && (
+            <div style={{
+              background: sincOk.tipo === "ok" ? T.grB : T.reB,
+              border:`1px solid ${sincOk.tipo === "ok" ? T.grBr : T.reBr}`,
+              borderRadius:9, padding:"10px 14px", fontSize:12,
+              color: sincOk.tipo === "ok" ? T.gr : T.re,
+            }}>{sincOk.txt}</div>
+          )}
+          <button onClick={sincronizarCRM} disabled={salvando} style={{
+            background:"transparent", border:`1.5px solid ${T.b}`, color:T.b,
+            borderRadius:10, padding:"10px 20px", fontWeight:700, fontSize:13,
+            cursor:salvando?"not-allowed":"pointer", fontFamily:"inherit",
+          }}>
+            {salvando ? "Sincronizando..." : "🔄 Sincronizar dados CRM → Portal"}
+          </button>
+          <div style={{ fontSize:11, color:T.txS }}>
+            Sincroniza nome, CPF, e-mail e dados do paciente com a Sala Virtual.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── PortalSyncPanel — painel Admin para sincronização em massa ── */
+function PortalSyncPanel({ pats = [], usuario }) {
+  const [loading, setLoading] = useState(false);
+  const [result,  setResult]  = useState(null);
+
+  async function sincronizarTodos() {
+    setLoading(true); setResult(null);
+    let ok = 0, skip = 0, err = 0;
+    for (const pac of pats) {
+      if (!pac.email) { skip++; continue; }
+      const v = svValidarCadastroCompleto(pac);
+      if (!v.valido) { skip++; continue; }
+      const key    = emailKey(pac.email);
+      const crmId  = pac.id || key;
+      const ts     = new Date().toISOString();
+      const portalUser = await fbBridgeGet(`sv_portal/users/${key}`) || {};
+      const saved = await fbBridgePut(`sv_portal/users/${key}`, {
+        ...portalUser,
+        email: pac.email, nm: pac.nm, cpf: pac.cpf || "",
+        nasc:  pac.nasc || pac.dob || "", tel: pac.tel || pac.whatsapp || "",
+        plano: pac.plano || "", crmPacId: crmId, role: "paciente", updatedAt: ts,
+      });
+      if (saved) ok++; else err++;
+    }
+    setLoading(false);
+    setResult({ ok, skip, err, total: pats.length });
+  }
+
+  const prontos    = pats.filter(p => svValidarCadastroCompleto(p).valido).length;
+  const incompletos = pats.filter(p => !svValidarCadastroCompleto(p).valido && p.email).length;
+  const semEmail   = pats.filter(p => !p.email).length;
+
+  return (
+    <div style={{ background:"#fff", border:`1px solid ${T.br}`, borderRadius:14, padding:20 }}>
+      <div style={{ fontSize:15, fontWeight:800, color:T.tx, marginBottom:4 }}>🌐 Sincronização CRM → Portal</div>
+      <div style={{ fontSize:12, color:T.txS, marginBottom:16 }}>
+        Sincroniza os dados dos pacientes do CRM com a Sala Virtual em massa.
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:16 }}>
+        {[
+          { label:"Prontos p/ Portal", val:prontos,    c:T.gr, bg:T.grB },
+          { label:"Incompletos",        val:incompletos, c:T.am, bg:T.amB },
+          { label:"Sem E-mail",         val:semEmail,   c:T.re, bg:T.reB },
+        ].map(s => (
+          <div key={s.label} style={{ background:s.bg, borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
+            <div style={{ fontSize:22, fontWeight:800, color:s.c }}>{s.val}</div>
+            <div style={{ fontSize:10, color:T.txM, textTransform:"uppercase", marginTop:2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+      {result && (
+        <div style={{ background:result.err > 0 ? T.amB : T.grB,
+          border:`1px solid ${result.err > 0 ? T.amBr : T.grBr}`,
+          borderRadius:10, padding:"12px 14px", marginBottom:14, fontSize:13 }}>
+          ✅ {result.ok} sincronizados · ⏭ {result.skip} ignorados{result.err > 0 ? ` · ❌ ${result.err} erros` : ""}
+        </div>
+      )}
+      <button onClick={sincronizarTodos} disabled={loading} style={{
+        background: loading ? T.br : `linear-gradient(135deg,${T.b},#2478cc)`,
+        color:"#fff", border:"none", borderRadius:10, padding:"11px 24px",
+        fontWeight:700, fontSize:13, cursor:loading?"not-allowed":"pointer", fontFamily:"inherit",
+      }}>
+        {loading ? "Sincronizando..." : "🔄 Sincronizar todos os pacientes → Portal"}
+      </button>
+      <div style={{ marginTop:8, fontSize:11, color:T.txS }}>
+        Apenas pacientes com cadastro completo (nome, CPF, e-mail, nascimento) serão sincronizados.
+      </div>
+    </div>
+  );
+}
+/* ════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════
    ESTILOS BASE
 ════════════════════════════════════════════════════════════════ */
 const SI={width:"100%",background:"#fff",border:`1.5px solid ${C.brd}`,borderRadius:8,padding:"9px 12px",color:C.tx,fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
@@ -3552,7 +3808,10 @@ function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
       <span style={{ fontSize:12, color:T.txM }}>{p.nasc}</span>
       <span style={{ fontSize:12, color:T.txM }}>{p.tel}</span>
       <span style={{ fontSize:12, color:T.txM }}>{p.plano}</span>
-      {stBadge(p.st)}
+      <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+        {stBadge(p.st)}
+        <BadgeCadastroCompleto pac={p} />
+      </div>
       <span style={{ display:"inline-flex", width:24, height:24, borderRadius:7,
         alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800,
         color:p.abc?abcColor[p.abc]:T.txS,
@@ -4200,6 +4459,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
     <FichaPacientePage pac={selPac} onClose={()=>setSelPac(null)}
       allExames={allExames} onSaveExame={novo=>setAllExames(p=>[novo,...p])}
       setPage={setPage} setPacFiltro={setPacFiltro}
+      usuario={usuario}
       onUpdatePac={updated=>setPats(prev=>prev.map(p=>p.id===updated.id?updated:p))} />
   );
 
@@ -4272,7 +4532,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
 }
 
 // ─── Ficha Completa do Paciente (página inteira, estilo imagem 3) ──────────────
-function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, onUpdatePac }) {
+function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, onUpdatePac, usuario }) {
   const [tab, setTab]               = useState("anamneses");
   const fbKey = pac.id.replace(/[^a-zA-Z0-9_-]/g,"_");
   const [anamneses, setAnamneses] = useFirebaseData("crm_data/anamneses_"+fbKey,"anamneses_"+pac.id,[]);
@@ -4359,10 +4619,12 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
     { key:"anamneses", label:`Anamneses (${anamneses.length})`, icon:"📋" },
     { key:"atestado",  label:`Atestados (${atestados.length})`,  icon:"📄" },
     { key:"exames",    label:`Exames (${meusExames.length})`,    icon:"🔬" },
+    { key:"portal",    label:"🌐 Portal / Senha",                icon:"🌐" },
     { key:"info",      label:"Informações",                      icon:"👤" },
   ];
 
   const initials = pac.nm.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
+  const validacao = svValidarCadastroCompleto(pac);
 
   return (
     <div style={{ padding:"0 0 48px", display:"flex", flexDirection:"column", gap:0, minHeight:"100%" }}>
@@ -4394,6 +4656,12 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
               {pac.cpf  && <span>🪪 CPF: {pac.cpf}</span>}
               {pac.email && <span>✉ {pac.email}</span>}
               {pac.tel   && <span>📞 {pac.tel}</span>}
+            </div>
+            <div style={{ marginTop:6 }}>
+              {validacao.valido
+                ? <span style={{ background:"rgba(26,122,82,.3)", color:"#a8e6cf", borderRadius:99, padding:"2px 10px", fontSize:10, fontWeight:700 }}>✅ Acesso Portal liberado</span>
+                : <span style={{ background:"rgba(192,57,43,.3)", color:"#ffa0a0", borderRadius:99, padding:"2px 10px", fontSize:10, fontWeight:700 }}>⚠️ Cadastro incompleto — {validacao.faltando.join(", ")}</span>
+              }
             </div>
           </div>
         </div>
@@ -4588,6 +4856,11 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── Tab: Portal / Senha */}
+      {tab==="portal" && (
+        <SenhaPortalSection pac={pac} usuario={usuario} />
       )}
 
       {/* ── Tab: Informações */}
