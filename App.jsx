@@ -4333,9 +4333,16 @@ function PageEstoque({usuario,estoqueState}){
   const [itens,setItens]=estoqueState;
   const [showNew,setShowNew]=useState(false);
   const [showMov,setShowMov]=useState(null);
+  const [confirmLimpar,setConfirmLimpar]=useState(false);
   const [form,setForm]=useState({nome:"",cat:"Injetável",qtd:0,min:5,max:50,vl:0,un:"un"});
   const [movQtd,setMovQtd]=useState(1);
   const [movTp,setMovTp]=useState("entrada");
+
+  function limparEstoque(){
+    setItens([]);
+    auditAdd(usuario.nome,"ESTOQUE_LIMPO","Todos os itens removidos para nova inserção");
+    setConfirmLimpar(false);
+  }
 
   const criticos=itens.filter(i=>i.qtd<=i.min);
   const valorTotal=itens.reduce((s,i)=>s+(parseFloat(i.qtd)||0)*(parseFloat(i.vl)||0),0);
@@ -4355,6 +4362,17 @@ function PageEstoque({usuario,estoqueState}){
 
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
+      {confirmLimpar&&(
+        <ConfirmPopup
+          title="Limpar todo o estoque?"
+          msg={`Todos os ${itens.length} itens serão removidos permanentemente do Firebase. Esta ação não pode ser desfeita.`}
+          danger={true}
+          yesLabel="🗑️ Limpar tudo"
+          noLabel="Cancelar"
+          onYes={limparEstoque}
+          onNo={()=>setConfirmLimpar(false)}
+        />
+      )}
       {showNew&&(
         <Modal title="📦 Novo Item de Estoque" onClose={()=>setShowNew(false)} width={480}>
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -4396,7 +4414,15 @@ function PageEstoque({usuario,estoqueState}){
             <h2 style={{color:C.tx,fontSize:18,fontWeight:800,margin:0}}>📦 Controle de Estoque</h2>
             <p style={{color:C.txM,fontSize:12,margin:"2px 0 0"}}>Consumíveis de teste: debitados automaticamente · Alerta em vermelho abaixo do mínimo</p>
           </div>
-          <Btn v="p" sm onClick={()=>setShowNew(true)}>+ Novo Item</Btn>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <Btn v="p" sm onClick={()=>setShowNew(true)}>+ Novo Item</Btn>
+            <button onClick={()=>setConfirmLimpar(true)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",
+                borderRadius:9,border:`1px solid ${C.red}50`,background:`${C.red}0a`,
+                color:C.red,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              🗑️ Limpar estoque
+            </button>
+          </div>
           <BtnExportar
             onCSV={()=>exportarCSV([
               {label:"Nome",       key:"nome"},
@@ -7417,15 +7443,11 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
     return d.startsWith(hojeStr);
   });
 
-  // Próximas consultas (próximos 30 dias, inclui hoje)
+  // Próximas consultas (próximos 7 dias)
   const proximas = consultas.filter(c => {
     const d = c.data || c.dt || c.date || "";
-    return d >= hojeStr && d <= new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
-  }).sort((a,b)=>{
-    const da = a.data||a.dt||""; const db = b.data||b.dt||"";
-    if(da!==db) return da.localeCompare(db);
-    return (a.hr||"").localeCompare(b.hr||"");
-  }).slice(0,15);
+    return d > hojeStr && d <= new Date(Date.now() + 7*86400000).toISOString().slice(0,10);
+  }).sort((a,b)=>(a.data||"").localeCompare(b.data||"")).slice(0,8);
 
   const dias = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
   const meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -7620,14 +7642,14 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
               <Ic n="clock" sz={16} c="#4A3A8A" />
             </div>
             <div>
-              <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Próximos 30 dias</div>
+              <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Próximos 7 dias</div>
               <div style={{ fontSize:11, color:T.txS }}>{proximas.length} consulta{proximas.length!==1?"s":""} agendada{proximas.length!==1?"s":""}</div>
             </div>
           </div>
         </div>
         {proximas.length === 0 ? (
           <div style={{ padding:"28px 20px", textAlign:"center" }}>
-            <div style={{ fontSize:13, color:T.txS }}>Nenhuma consulta nos próximos 30 dias</div>
+            <div style={{ fontSize:13, color:T.txS }}>Nenhuma consulta nos próximos 7 dias</div>
           </div>
         ) : (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:0 }}>
@@ -7637,13 +7659,13 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
                 borderBottom: `1px solid ${T.br}` }}>
                 <div style={{ fontSize:10, fontWeight:700, color:T.b,
                   textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>
-                  {(c.data||c.dt) ? new Date((c.data||c.dt)+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"}) : "—"}
+                  {c.data ? new Date(c.data+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"}) : "—"}
                 </div>
                 <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>
                   {c.pac||c.paciente||c.nome||"—"}
                 </div>
                 <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>
-                  {c.hr||c.hora||"—"} · {c.proc||c.tipo||c.mod||"Consulta"}
+                  {c.hora||"—"} · {c.tipo||"Consulta"}
                 </div>
               </div>
             ))}
