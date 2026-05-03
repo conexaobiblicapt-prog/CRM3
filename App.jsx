@@ -9886,6 +9886,9 @@ async function fbWrite(path, value) {
 }
 
 async function fbRead(path) {
+  // Retorna:
+  //   null      → path existe mas está vazio/null (comportamento normal do Firebase)
+  //   undefined → erro real: 401, rede offline, fetch falhou
   try {
     const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`, {
       cache: "no-store",
@@ -9898,14 +9901,14 @@ async function fbRead(path) {
           "\n→ Regra mínima necessária: \"crm_data\": { \".read\": true, \".write\": true }");
         _fbOfflineLogged = true;
       }
-      return null;
+      return undefined; // erro de autenticação — Firebase inacessível
     }
-    if (!r.ok) return null;
+    if (!r.ok) return undefined; // outro erro HTTP — Firebase inacessível
     _fbOfflineLogged = false;
-    return await r.json();
+    return await r.json(); // pode ser null (path vazio) — isso é válido!
   } catch(e) {
     console.warn("[Firebase] Erro de rede (read):", e.message);
-    return null;
+    return undefined; // rede offline — Firebase inacessível
   }
 }
 
@@ -9949,7 +9952,9 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
       const val = await fbRead(fbPath);
       if (!active) return;
 
-      if (val === null) {
+      // undefined = erro real (rede, 401) — marca offline e aguarda próximo ciclo
+      // null = path vazio no Firebase — Firebase está OK, apenas sem dados ainda
+      if (val === undefined) {
         fbAvailableRef.current = false;
         if (!loaded) setLoaded(true);
         return;
@@ -9998,7 +10003,7 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
         if (!ok) console.warn("[Firebase] Falha ao salvar:", fbPath);
       });
     } else {
-      console.warn("[Firebase] OFFLINE — dado não salvo (localStorage desativado):", fbPath);
+      console.warn("[Firebase] OFFLINE — Firebase inacessível, dado não salvo:", fbPath, "\n→ Verifique sua conexão ou as regras do Firebase.");
     }
   }, [fbPath]); // eslint-disable-line
 
@@ -10022,7 +10027,8 @@ function useFirebaseSync() {
       const readOk = await fbRead("crm_data/crm_last_sync");
       if (!active) return;
 
-      if (readOk !== null) {
+      // readOk !== undefined = Firebase acessível (mesmo que path esteja null/vazio)
+      if (readOk !== undefined) {
         const writeOk = await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
         if (!active) return;
         if (writeOk) {
