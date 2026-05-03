@@ -4339,6 +4339,11 @@ function PageEstoque({usuario,estoqueState}){
   const [movTp,setMovTp]=useState("entrada");
 
   function limparEstoque(){
+    fbWrite("crm_data/crm_estoque_v26", null)
+      .then(ok=>{
+        if(ok) console.info("[Estoque] Firebase limpo com sucesso.");
+        else console.warn("[Estoque] Falha ao limpar Firebase — tente novamente.");
+      });
     setItens([]);
     auditAdd(usuario.nome,"ESTOQUE_LIMPO","Todos os itens removidos para nova inserção");
     setConfirmLimpar(false);
@@ -5707,12 +5712,19 @@ function Badge({ label, color, bg, brd }) {
 ════════════════════════════════════════════════════════════════ */
 
 function PageFinancas() {
-  const [lancamentos, setLancamentos] = useFirebaseData("crm_data/crm_lancamentos_v26","crm_lancamentos_v26",mockLancamentos_data);
+  const [lancamentos, setLancamentos] = useFirebaseData("crm_data/crm_lancamentos_v26","crm_lancamentos_v26",[]);
   const [filtro, setFiltro] = useState("Todos");
   const [confirmLimpar, setConfirmLimpar] = useState(false);
 
   function limparHistorico() {
-    setLancamentos([]);  // useFirebaseData salva [] no Firebase automaticamente
+    // fbWrite direto: bypassa fbAvailableRef (que pode estar false por bug do null)
+    // PUT null = apaga o nó no Firebase REST API
+    fbWrite("crm_data/crm_lancamentos_v26", null)
+      .then(ok => {
+        if(ok) console.info("[Financeiro] Firebase limpo com sucesso.");
+        else console.warn("[Financeiro] Falha ao limpar Firebase — tente novamente.");
+      });
+    setLancamentos([]);
     setConfirmLimpar(false);
   }
 
@@ -9912,6 +9924,8 @@ async function fbWrite(path, value) {
 }
 
 async function fbRead(path) {
+  // Retorna null  → path vazio/null no Firebase (válido)
+  // Retorna undefined → erro real: 401, rede offline, fetch falhou
   try {
     const r = await fetch(`${FB_URL}/${path}.json${fbQ()}`, {
       cache: "no-store",
@@ -9924,14 +9938,14 @@ async function fbRead(path) {
           "\n→ Regra mínima necessária: \"crm_data\": { \".read\": true, \".write\": true }");
         _fbOfflineLogged = true;
       }
-      return null;
+      return undefined; // erro de auth — Firebase inacessível
     }
-    if (!r.ok) return null;
+    if (!r.ok) return undefined; // outro erro HTTP
     _fbOfflineLogged = false;
-    return await r.json();
+    return await r.json(); // null = path vazio (válido!)
   } catch(e) {
     console.warn("[Firebase] Erro de rede (read):", e.message);
-    return null;
+    return undefined; // rede offline
   }
 }
 
@@ -9975,7 +9989,9 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
       const val = await fbRead(fbPath);
       if (!active) return;
 
-      if (val === null) {
+      // undefined = erro real (rede/auth) — marca offline e para
+      // null      = path vazio no Firebase — Firebase OK, apenas sem dados
+      if (val === undefined) {
         fbAvailableRef.current = false;
         if (!loaded) setLoaded(true);
         return;
@@ -10048,7 +10064,7 @@ function useFirebaseSync() {
       const readOk = await fbRead("crm_data/crm_last_sync");
       if (!active) return;
 
-      if (readOk !== null) {
+      if (readOk !== undefined) { // undefined=erro real; null=path vazio (ok)
         const writeOk = await fbWrite("crm_data/crm_last_sync", new Date().toISOString());
         if (!active) return;
         if (writeOk) {
