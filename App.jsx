@@ -3034,7 +3034,7 @@ Equipe Dra. Ilza Ezequiel`
    PÁGINA PRONTUÁRIO ELETRÔNICO (ex-Pacientes)
 ════════════════════════════════════════════════════════════════ */
 
-function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, setPage, setPacFiltro, setPats }) {
+function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFiltro, setPats }) {
   const [tab, setTab] = useState("info");
   // AutoSave: salva 2s após última edição
   const autoTimer = useRef(null);
@@ -3050,7 +3050,6 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
   const [prontuarios, setProntuarios] = useState(mockProntuarios[pac.id] || []);
   const [showAddPront, setShowAddPront] = useState(false);
   const [prontForm, setProntForm] = useState({ tipo:"Consulta", resumo:"" });
-  const [exameDetalhe, setExameDetalhe] = useState(null); // exame aberto para detalhe/anexo
 
   const meusExames = allExames.filter(e => e.pac === pac.nm);
   const abcColor = { A:T.gr, B:T.b, C:T.txM };
@@ -3246,12 +3245,6 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
       )}
 
       {/* ── Tab: Exames */}
-      {exameDetalhe && (
-        <PopupDetalheExame
-          exame={exameDetalhe}
-          onClose={()=>setExameDetalhe(null)}
-          onUpdate={upd=>{ onUpdateExame && onUpdateExame(upd); setExameDetalhe(null); }} />
-      )}
       {tab==="exames" && (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           {meusExames.length === 0 ? (
@@ -3261,16 +3254,9 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
             </div>
           ) : meusExames.map(e => {
             const { c:ac, bg:abg } = examAccent(e.tipo);
-            const temAnexo = !!e.arquivo;
             return (
-              <div key={e.id}
-                onClick={()=>setExameDetalhe(e)}
-                style={{ display:"flex", alignItems:"center", gap:12,
-                  padding:"12px 14px", background:T.sur2, borderRadius:12,
-                  border:`1.5px solid ${temAnexo ? T.grBr : T.br}`,
-                  cursor:"pointer", transition:"all .15s" }}
-                onMouseEnter={el=>{ el.currentTarget.style.borderColor=ac; el.currentTarget.style.background=T.sur; }}
-                onMouseLeave={el=>{ el.currentTarget.style.borderColor=temAnexo?T.grBr:T.br; el.currentTarget.style.background=T.sur2; }}>
+              <div key={e.id} style={{ display:"flex", alignItems:"center", gap:12,
+                padding:"12px 14px", background:T.sur2, borderRadius:12, border:`1px solid ${T.br}` }}>
                 <div style={{ width:36, height:36, borderRadius:9, background:abg,
                   flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
                   <Ic n="exam" sz={16} c={ac} />
@@ -3278,14 +3264,12 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:T.tx,
                     whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{e.tipo}</div>
-                  <div style={{ fontSize:11, color:T.txS, marginTop:2, display:"flex", gap:8, alignItems:"center" }}>
+                  <div style={{ fontSize:11, color:T.txS, marginTop:2, display:"flex", gap:8 }}>
                     <span>{e.dt||"Sem data"}</span>
                     {e.obs && <span style={{ color:T.txM }}>· {e.obs}</span>}
-                    {temAnexo && <span style={{ color:T.gr, fontWeight:700 }}>📎 {e.arquivoNome}</span>}
                   </div>
                 </div>
                 {stBadge(e.st)}
-                <span style={{ fontSize:11, color:T.txS, flexShrink:0 }}>›</span>
               </div>
             );
           })}
@@ -3498,172 +3482,6 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
           selList.forEach(tipo=>onSave({id:"e"+Date.now()+Math.random(),pac,tipo,dt,obs,st:"Agendado"}));
           onClose();
         }} icon="exam">Solicitar{selList.length>0?` (${selList.length})`:""}</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-// ─── helpers de arquivo (globais para uso fora do CRM) ──────────────────────
-function fileIcon(name=""){
-  const ext=(name||"").split(".").pop().toLowerCase();
-  if(ext==="pdf")return "📕";
-  if(["doc","docx"].includes(ext))return "📘";
-  if(["xls","xlsx"].includes(ext))return "📗";
-  if(["png","jpg","jpeg","gif","webp"].includes(ext))return "🖼️";
-  return "📎";
-}
-function downloadB64(dataUrl, fileName){
-  const a=document.createElement("a"); a.href=dataUrl; a.download=fileName||"arquivo";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-}
-
-// ─── PopupDetalheExame — visualiza + anexa resultado do exame ────────────────
-function PopupDetalheExame({ exame, onClose, onUpdate }) {
-  const [st,     setSt]     = useState(exame.st   || "Agendado");
-  const [obs,    setObs]    = useState(exame.obs  || "");
-  const [arquivo, setArquivo] = useState(
-    exame.arquivo ? { name: exame.arquivoNome, dataUrl: exame.arquivo } : null
-  );
-  const [loading, setLoading] = useState(false);
-  const fileRef = useRef();
-  const isRealizado = st === "Realizado";
-
-  const STATUSES = ["Agendado","Realizado","Cancelado","Pendente","Aguardando"];
-  const statusColor = {
-    Agendado:"#1A5FA8", Realizado:"#1A7A52",
-    Cancelado:"#C0392B", Pendente:"#9A6A00", Aguardando:"#7A5018"
-  };
-
-  function handleFile(e) {
-    const f = e.target.files[0]; if(!f) return;
-    if(f.size > 8 * 1024 * 1024) { alert("Arquivo muito grande. Máximo 8MB."); return; }
-    setLoading(true);
-    const reader = new FileReader();
-    reader.onload = ev => { setArquivo({ name: f.name, dataUrl: ev.target.result }); setLoading(false); };
-    reader.readAsDataURL(f);
-  }
-
-  function handleSave() {
-    const updated = {
-      ...exame, st, obs,
-      arquivo:     arquivo ? arquivo.dataUrl : null,
-      arquivoNome: arquivo ? arquivo.name    : null,
-    };
-    onUpdate && onUpdate(updated);
-    onClose();
-  }
-
-  const isImg = arquivo && (arquivo.dataUrl?.startsWith("data:image") ||
-    /\.(png|jpg|jpeg|gif|webp)$/i.test(arquivo.name||""));
-  const isPdf = arquivo && (arquivo.dataUrl?.startsWith("data:application/pdf") ||
-    /\.pdf$/i.test(arquivo.name||""));
-
-  return (
-    <Modal title={`🔬 ${exame.tipo}`} onClose={onClose} width={540}>
-      {/* Cabeçalho info */}
-      <div style={{ background:T.sur2, border:`1px solid ${T.br}`, borderRadius:12,
-        padding:"12px 16px", marginBottom:18, display:"flex", gap:16, flexWrap:"wrap" }}>
-        <div><div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase",
-          letterSpacing:".07em", marginBottom:3 }}>Paciente</div>
-          <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{exame.pac}</div></div>
-        <div><div style={{ fontSize:10, fontWeight:700, color:T.txS, textTransform:"uppercase",
-          letterSpacing:".07em", marginBottom:3 }}>Data</div>
-          <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{exame.dt||"—"}</div></div>
-      </div>
-
-      {/* Status */}
-      <Fld label="Status">
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          {STATUSES.map(s => (
-            <button key={s} onClick={()=>setSt(s)}
-              style={{ padding:"7px 16px", borderRadius:99, border:"1.5px solid",
-                borderColor: st===s ? statusColor[s]||T.b : T.br,
-                background:  st===s ? (statusColor[s]||T.b)+"18" : T.sur,
-                color:       st===s ? statusColor[s]||T.b : T.txM,
-                fontWeight:  st===s ? 700 : 500, fontSize:12.5, cursor:"pointer",
-                transition:"all .15s" }}>
-              {s}
-            </button>
-          ))}
-        </div>
-      </Fld>
-
-      {/* Observações */}
-      <Fld label="Observações">
-        <textarea style={{ ...inp, minHeight:64, resize:"vertical" }}
-          value={obs} onChange={e=>setObs(e.target.value)}
-          placeholder="Ex.: preparo necessário, laboratório, convênio..." />
-      </Fld>
-
-      {/* ── Área de Anexo ── */}
-      <Fld label={`Resultado / Laudo ${arquivo?"(anexado)":"(opcional)"}`}>
-        {arquivo ? (
-          <div style={{ border:`1.5px solid ${T.grBr}`, borderRadius:12,
-            background:T.grB, padding:"14px 16px" }}>
-            {/* Preview imagem */}
-            {isImg && (
-              <img src={arquivo.dataUrl} alt={arquivo.name}
-                style={{ width:"100%", maxHeight:220, objectFit:"contain",
-                  borderRadius:8, marginBottom:10, cursor:"pointer" }}
-                onClick={()=>downloadB64(arquivo.dataUrl, arquivo.name)} />
-            )}
-            {/* Preview PDF inline */}
-            {isPdf && (
-              <iframe src={arquivo.dataUrl} title={arquivo.name}
-                style={{ width:"100%", height:200, borderRadius:8,
-                  border:`1px solid ${T.br}`, marginBottom:10 }} />
-            )}
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <span style={{ fontSize:22 }}>{fileIcon(arquivo.name)}</span>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:T.gr,
-                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                  {arquivo.name}
-                </div>
-                <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>
-                  Arquivo anexado · clique para baixar
-                </div>
-              </div>
-              <button onClick={()=>downloadB64(arquivo.dataUrl, arquivo.name)}
-                style={{ padding:"6px 12px", borderRadius:8, border:`1px solid ${T.grBr}`,
-                  background:T.sur, color:T.gr, fontSize:11, fontWeight:700, cursor:"pointer" }}>
-                ⬇ Baixar
-              </button>
-              <button onClick={()=>{ setArquivo(null); if(fileRef.current) fileRef.current.value=""; }}
-                style={{ width:28, height:28, borderRadius:7, border:"none",
-                  background:T.reB, color:T.re, cursor:"pointer", fontSize:14,
-                  display:"flex", alignItems:"center", justifyContent:"center" }}>
-                ✕
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div onClick={()=>fileRef.current?.click()}
-            style={{ border:`2px dashed ${T.brD}`, borderRadius:12,
-              padding:"22px 16px", textAlign:"center", cursor:"pointer",
-              transition:"all .2s", background:T.sur }}
-            onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.b; e.currentTarget.style.background=T.bL; }}
-            onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.brD; e.currentTarget.style.background=T.sur; }}>
-            {loading
-              ? <div style={{ color:T.txS, fontSize:13 }}>⏳ Carregando arquivo...</div>
-              : <>
-                  <div style={{ fontSize:28, marginBottom:6 }}>📎</div>
-                  <div style={{ fontSize:13, fontWeight:600, color:T.txM, marginBottom:3 }}>
-                    Clique para anexar o laudo / resultado
-                  </div>
-                  <div style={{ fontSize:11, color:T.txS }}>PDF, imagem — máx. 8MB</div>
-                </>
-            }
-          </div>
-        )}
-        <input ref={fileRef} type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx"
-          style={{ display:"none" }} onChange={handleFile} />
-      </Fld>
-
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:6 }}>
-        <Btn onClick={onClose} variant="ghost">Fechar</Btn>
-        <Btn onClick={handleSave} icon="check">Salvar</Btn>
       </div>
     </Modal>
   );
@@ -7599,11 +7417,15 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
     return d.startsWith(hojeStr);
   });
 
-  // Próximas consultas (próximos 7 dias)
+  // Próximas consultas (próximos 30 dias, inclui hoje)
   const proximas = consultas.filter(c => {
     const d = c.data || c.dt || c.date || "";
-    return d > hojeStr && d <= new Date(Date.now() + 7*86400000).toISOString().slice(0,10);
-  }).sort((a,b)=>(a.data||"").localeCompare(b.data||"")).slice(0,8);
+    return d >= hojeStr && d <= new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+  }).sort((a,b)=>{
+    const da = a.data||a.dt||""; const db = b.data||b.dt||"";
+    if(da!==db) return da.localeCompare(db);
+    return (a.hr||"").localeCompare(b.hr||"");
+  }).slice(0,15);
 
   const dias = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
   const meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -7798,14 +7620,14 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
               <Ic n="clock" sz={16} c="#4A3A8A" />
             </div>
             <div>
-              <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Próximos 7 dias</div>
+              <div style={{ fontSize:14, fontWeight:700, color:T.tx }}>Próximos 30 dias</div>
               <div style={{ fontSize:11, color:T.txS }}>{proximas.length} consulta{proximas.length!==1?"s":""} agendada{proximas.length!==1?"s":""}</div>
             </div>
           </div>
         </div>
         {proximas.length === 0 ? (
           <div style={{ padding:"28px 20px", textAlign:"center" }}>
-            <div style={{ fontSize:13, color:T.txS }}>Nenhuma consulta nos próximos 7 dias</div>
+            <div style={{ fontSize:13, color:T.txS }}>Nenhuma consulta nos próximos 30 dias</div>
           </div>
         ) : (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:0 }}>
@@ -7815,13 +7637,13 @@ function PageHomeRecepcao({ setPage, usuario, pats = [], allExames = [] }) {
                 borderBottom: `1px solid ${T.br}` }}>
                 <div style={{ fontSize:10, fontWeight:700, color:T.b,
                   textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>
-                  {c.data ? new Date(c.data+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"}) : "—"}
+                  {(c.data||c.dt) ? new Date((c.data||c.dt)+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"}) : "—"}
                 </div>
                 <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>
                   {c.pac||c.paciente||c.nome||"—"}
                 </div>
                 <div style={{ fontSize:11, color:T.txS, marginTop:2 }}>
-                  {c.hora||"—"} · {c.tipo||"Consulta"}
+                  {c.hr||c.hora||"—"} · {c.proc||c.tipo||c.mod||"Consulta"}
                 </div>
               </div>
             ))}
