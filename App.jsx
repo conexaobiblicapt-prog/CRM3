@@ -2322,6 +2322,9 @@ function NovoPacienteModal({onClose,onSalvar}){
   /* ── salvar ── */
   function doSalvar(){
     if(!form.nm.trim()){alert("Nome é obrigatório");return;}
+    // ── Validação obrigatória para acesso à Sala Virtual ──
+    if(!form.cpf.trim()){alert("CPF é obrigatório.\n\nO CPF é usado como senha de acesso à Sala Virtual.");return;}
+    if(!form.email.trim()){alert("E-mail é obrigatório.\n\nO e-mail é o login de acesso à Sala Virtual.");return;}
     const aceiteTs=form.lgpdAceite?form.lgpdAceiteTs:null;
     const novo={
       id:`p${Date.now()}`,
@@ -2406,6 +2409,26 @@ Clínica Dra. Ilza Ezequiel · (13) XXXX-XXXX · www.drailzaezequiel.com.br
 `);
     }
     onSalvar(novo);
+
+    // ── Sincronizar automaticamente com Sala Virtual (sv_portal) ──
+    if(form.email.trim()) {
+      const svKey = form.email.toLowerCase().replace(/\./g,",").replace(/@/g,"_at_");
+      const ts    = new Date().toISOString();
+      fetch(`https://crm-dra-ilza-default-rtdb.firebaseio.com/sv_portal/users/${svKey}.json`, {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          email:    form.email.trim(),
+          nm:       form.nm.trim(),
+          cpf:      form.cpf.trim(),
+          nasc:     form.nasc||"",
+          tel:      form.whatsapp||form.cel||form.tel||"",
+          plano:    form.plano||"Particular",
+          crmPacId: novo.id,
+          role:     "paciente",
+          updatedAt: ts,
+        })
+      }).catch(()=>{});
+    }
   }
 
   /* ─── helpers visuais ─── */
@@ -4359,6 +4382,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
     { key:"anamneses", label:`Anamneses (${anamneses.length})`, icon:"📋" },
     { key:"atestado",  label:`Atestados (${atestados.length})`,  icon:"📄" },
     { key:"exames",    label:`Exames (${meusExames.length})`,    icon:"🔬" },
+    { key:"portal",    label:"🌐 Portal / Acesso",               icon:"🌐" },
     { key:"info",      label:"Informações",                      icon:"👤" },
   ];
 
@@ -4395,6 +4419,13 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
               {pac.email && <span>✉ {pac.email}</span>}
               {pac.tel   && <span>📞 {pac.tel}</span>}
             </div>
+            {/* Badge acesso portal */}
+            {(() => {
+              const v = svValidarCadastroCompleto(pac);
+              return v.valido
+                ? <span style={{ display:"inline-block", marginTop:8, background:"rgba(26,122,82,.3)", color:"#a8e6cf", borderRadius:99, padding:"2px 10px", fontSize:10, fontWeight:700 }}>✅ Acesso Sala Virtual liberado</span>
+                : <span style={{ display:"inline-block", marginTop:8, background:"rgba(192,57,43,.3)", color:"#ffa0a0", borderRadius:99, padding:"2px 10px", fontSize:10, fontWeight:700 }}>⚠️ Acesso bloqueado — falta: {v.faltando.join(", ")}</span>;
+            })()}
           </div>
         </div>
       </div>
@@ -4588,6 +4619,11 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── Tab: Portal / Acesso Sala Virtual */}
+      {tab==="portal" && (
+        <SenhaPortalSection pac={pac} usuario={window._crmUsuario} />
       )}
 
       {/* ── Tab: Informações */}
@@ -10797,7 +10833,172 @@ export default function App(){
 // CRM Dra. Ilza Ezequiel v34 — Dashboard Recepção, tema azul, scroll global
 
 /* ════════════════════════════════════════════════════════════════
-   BRIDGE CRM ↔ PORTAL — sincronização via Firebase Realtime Database
+   BRIDGE v22 — Sala Virtual
+   Login = e-mail | Senha = CPF (somente dígitos)
+════════════════════════════════════════════════════════════════ */
+
+// Helpers Firebase Bridge
+const FB_BRIDGE_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+async function fbBGet(path) {
+  try { const r = await fetch(`${FB_BRIDGE_URL}/${path}.json`); return r.ok ? await r.json() : null; }
+  catch(e) { return null; }
+}
+async function fbBPut(path, value) {
+  try { const r = await fetch(`${FB_BRIDGE_URL}/${path}.json`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(value) }); return r.ok; }
+  catch(e) { return false; }
+}
+function svEmailKey(email) {
+  return (email||"").toLowerCase().replace(/\./g,",").replace(/@/g,"_at_");
+}
+
+// Valida se paciente tem todos os campos para acessar a Sala Virtual
+function svValidarCadastroCompleto(pac) {
+  const faltando = [];
+  if(!pac)              return { valido:false, faltando:["Cadastro não encontrado"] };
+  if(!pac.nm?.trim())   faltando.push("Nome completo");
+  if(!pac.cpf?.trim())  faltando.push("CPF");
+  if(!pac.email?.trim()) faltando.push("E-mail");
+  const nasc = pac.nasc||pac.dob||pac.dn||pac.dataNasc||"";
+  if(!nasc) faltando.push("Data de nascimento");
+  return { valido: faltando.length === 0, faltando };
+}
+
+// Badge de status de acesso (para usar na listagem de pacientes)
+function BadgeCadastroCompleto({ pac }) {
+  const v = svValidarCadastroCompleto(pac);
+  if(v.valido) return (
+    <span style={{ background:"#E6F5EE", color:"#1A7A52", border:"1px solid #86C9A4",
+      borderRadius:99, padding:"2px 8px", fontSize:9, fontWeight:700 }}>✅ Portal OK</span>
+  );
+  return (
+    <span title={`Faltando: ${v.faltando.join(", ")}`}
+      style={{ background:"#FFF8E6", color:"#9A6A00", border:"1px solid #F0C060",
+        borderRadius:99, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"help" }}>⚠️ Incompleto</span>
+  );
+}
+
+// Seção Portal dentro da ficha do paciente
+function SenhaPortalSection({ pac, usuario }) {
+  const isAdmin = ["admin","medico"].includes(usuario?.role);
+  const [sincMsg, setSincMsg] = React.useState(null);
+  const [salvando, setSalvando] = React.useState(false);
+
+  const cpfNumeros = (pac.cpf||"").replace(/\D/g,"");
+  const validacao  = svValidarCadastroCompleto(pac);
+
+  async function sincronizarCRM() {
+    if(!pac.email) { setSincMsg({tipo:"err",txt:"Paciente sem e-mail."}); return; }
+    if(!validacao.valido) { setSincMsg({tipo:"err",txt:`Cadastro incompleto: ${validacao.faltando.join(", ")}`}); return; }
+    setSalvando(true);
+    const key   = svEmailKey(pac.email);
+    const crmId = pac.id||key;
+    const ts    = new Date().toISOString();
+    const exist = await fbBGet(`sv_portal/users/${key}`) || {};
+    await fbBPut(`sv_portal/users/${key}`, {
+      ...exist,
+      email:    pac.email,
+      nm:       pac.nm,
+      cpf:      pac.cpf||"",
+      nasc:     pac.nasc||pac.dob||"",
+      tel:      pac.tel||pac.whatsapp||"",
+      plano:    pac.plano||"",
+      crmPacId: crmId,
+      role:     "paciente",
+      updatedAt: ts,
+    });
+    setSalvando(false);
+    setSincMsg({tipo:"ok",txt:"✅ Dados sincronizados com a Sala Virtual!"});
+  }
+
+  if(!pac.email) return (
+    <div style={{background:"#FFF8E6",border:"1px solid #F0C060",borderRadius:12,padding:"14px 16px"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#9A6A00",marginBottom:4}}>⚠️ Sem acesso à Sala Virtual</div>
+      <div style={{fontSize:12,color:T.txM}}>Adicione um e-mail no cadastro para liberar o acesso.</div>
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+      {/* Validação */}
+      {!validacao.valido && (
+        <div style={{background:"#FDF0EE",border:"1.5px solid #F0A090",borderRadius:12,padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.re,marginBottom:6}}>🚫 Cadastro incompleto — Acesso bloqueado</div>
+          {validacao.faltando.map(f=>(
+            <div key={f} style={{fontSize:12,color:T.re,display:"flex",alignItems:"center",gap:6,marginBottom:3}}>⚠️ {f}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Credenciais */}
+      <div style={{background:"#E6F5EE",border:"1.5px solid #86C9A4",borderRadius:12,padding:"18px 20px"}}>
+        <div style={{fontSize:12,fontWeight:700,color:T.gr,textTransform:"uppercase",letterSpacing:".07em",marginBottom:14}}>
+          🔑 Credenciais de Acesso à Sala Virtual
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{background:"#fff",border:"1px solid #86C9A4",borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:10,fontWeight:700,color:T.txS,textTransform:"uppercase",letterSpacing:".07em",marginBottom:4}}>Login (E-mail)</div>
+            <div style={{fontSize:13,fontWeight:600,color:T.tx,fontFamily:"monospace"}}>{pac.email}</div>
+          </div>
+          <div style={{background:"#fff",border:"1px solid #86C9A4",borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:10,fontWeight:700,color:T.txS,textTransform:"uppercase",letterSpacing:".07em",marginBottom:4}}>
+              Senha — CPF (somente números)
+            </div>
+            {isAdmin ? (
+              <div style={{fontSize:15,fontWeight:700,color:T.b,fontFamily:"monospace",letterSpacing:".05em"}}>
+                {cpfNumeros || <span style={{color:T.am}}>⚠️ CPF não cadastrado</span>}
+              </div>
+            ) : (
+              <div style={{fontSize:13,color:T.txM}}>CPF cadastrado (somente dígitos, sem pontos ou traço)</div>
+            )}
+            {pac.cpf && (
+              <div style={{fontSize:11,color:T.txS,marginTop:4}}>CPF formatado: {pac.cpf}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div style={{background:T.sur2,border:`1px solid ${T.br}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.txM,textTransform:"uppercase",letterSpacing:".07em",marginBottom:8}}>ℹ️ Como funciona</div>
+        <div style={{fontSize:12,color:T.txM,lineHeight:1.7}}>
+          O paciente acessa a Sala Virtual usando o <strong>e-mail</strong> como login
+          e o <strong>CPF (somente dígitos)</strong> como senha. Não é necessário criar ou gerenciar senhas separadas.
+        </div>
+        {!cpfNumeros && (
+          <div style={{marginTop:10,background:T.amB,border:`1px solid ${T.amBr}`,borderRadius:9,padding:"10px 12px",fontSize:12,color:T.am}}>
+            ⚠️ CPF não cadastrado — adicione o CPF para liberar o acesso.
+          </div>
+        )}
+      </div>
+
+      {/* Sincronizar (admin) */}
+      {isAdmin && (
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {sincMsg && (
+            <div style={{background:sincMsg.tipo==="ok"?"#E6F5EE":"#FDF0EE",
+              border:`1px solid ${sincMsg.tipo==="ok"?"#86C9A4":"#F0A090"}`,
+              borderRadius:9,padding:"10px 14px",fontSize:12,
+              color:sincMsg.tipo==="ok"?T.gr:T.re}}>
+              {sincMsg.txt}
+            </div>
+          )}
+          <button onClick={sincronizarCRM} disabled={salvando}
+            style={{background:"transparent",border:`1.5px solid ${T.b}`,color:T.b,
+              borderRadius:10,padding:"10px 20px",fontWeight:700,fontSize:13,
+              cursor:salvando?"not-allowed":"pointer",fontFamily:"inherit"}}>
+            {salvando?"Sincronizando...":"🔄 Sincronizar dados CRM → Sala Virtual"}
+          </button>
+          <div style={{fontSize:11,color:T.txS}}>
+            Garante que os dados (nome, CPF, e-mail) estão atualizados na Sala Virtual.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
    Qualquer mudança nos dados do CRM é broadcast para o Portal
    e vice-versa via storage events + polling
 ════════════════════════════════════════════════════════════════ */
