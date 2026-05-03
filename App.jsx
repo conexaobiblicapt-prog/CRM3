@@ -2285,6 +2285,7 @@ function NovoPacienteModal({onClose,onSalvar}){
     origem:"",obs:"",
     respFinNome:"",respFinCpf:"",
     st:"Ativo",abc:"",
+    lgpdAceite:false,lgpdAceiteTs:"",lgpdEmailEnviado:false,
   };
   const [form,setForm]=useState(emptyForm);
   function setF(k,v){setForm(p=>({...p,[k]:v}));}
@@ -2321,6 +2322,7 @@ function NovoPacienteModal({onClose,onSalvar}){
   /* ── salvar ── */
   function doSalvar(){
     if(!form.nm.trim()){alert("Nome é obrigatório");return;}
+    const aceiteTs=form.lgpdAceite?form.lgpdAceiteTs:null;
     const novo={
       id:`p${Date.now()}`,
       pront:Math.floor(7400000+Math.random()*500000),
@@ -2363,7 +2365,46 @@ function NovoPacienteModal({onClose,onSalvar}){
       st:form.st||"Ativo",
       abc:form.abc||"",
       ats:[],
+      lgpd:{
+        aceite:form.lgpdAceite||false,
+        aceiteTs:aceiteTs||null,
+        versaoPolitica:"1.0",
+        canal:"crm_recepção",
+        emailEnviado:form.lgpdAceite&&!!form.email,
+        emailEnviadoTs:form.lgpdAceite&&form.email?new Date().toISOString():null,
+      },
     };
+    // Disparar e-mail LGPD simulado se aceite marcado e e-mail preenchido
+    if(form.lgpdAceite&&form.email){
+      console.log(`
+[E-MAIL LGPD – CRM RECEPÇÃO]
+Para: ${form.email}
+Assunto: Bem-vindo(a) à Clínica Dra. Ilza Ezequiel – Proteção de Dados (LGPD)
+
+Olá, ${form.nm.trim()}!
+
+Seu cadastro foi realizado na Clínica Dra. Ilza Ezequiel – Gastrenterologia.
+
+✅ REGISTRO DE CONSENTIMENTO LGPD
+Em ${new Date(aceiteTs).toLocaleString("pt-BR")} você (ou seu responsável) foi informado(a) e
+consentiu com o tratamento dos seus dados pessoais e de saúde, conforme:
+• Lei nº 13.709/2018 (LGPD)
+• Política de Privacidade da Clínica Dra. Ilza Ezequiel · Versão 1.0
+
+📋 SEUS DADOS COLETADOS:
+• Dados de identificação, contato e saúde para prestação de serviços médicos.
+• Prontuário eletrônico mantido por mínimo 20 anos (CFM Res. 1.821/2007).
+• Dados nunca vendidos ou cedidos para fins comerciais.
+
+🔒 SEUS DIREITOS (arts. 17-22 LGPD):
+Acesso · Correção · Eliminação · Portabilidade · Revogação do consentimento
+Contato DPO: privacidade@drailzaezequiel.com.br
+
+Atenciosamente,
+Dra. Ilza Ezequiel – Encarregada de Dados (DPO) · CRM/SP XXXXX
+Clínica Dra. Ilza Ezequiel · (13) XXXX-XXXX · www.drailzaezequiel.com.br
+`);
+    }
     onSalvar(novo);
   }
 
@@ -2526,6 +2567,36 @@ function NovoPacienteModal({onClose,onSalvar}){
         <label style={SL}>Observações Gerais</label>
         <textarea value={form.obs||""} onChange={e=>setF("obs",e.target.value)} rows={3} placeholder="Informações adicionais, preferências de atendimento, alertas importantes..." style={{...SI2,resize:"vertical",lineHeight:1.6}}/>
       </div>
+
+      {/* ── Consentimento LGPD ─────────────────────────────── */}
+      <div style={{background:"linear-gradient(135deg,#f0f6ff,#e8f2ff)",border:`2px solid ${form.lgpdAceite?"#1a5fa8":"#c8dcf0"}`,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{fontSize:16}}>🔒</span>
+          <span style={{fontSize:12,fontWeight:800,color:"#0d2137",textTransform:"uppercase",letterSpacing:".06em"}}>LGPD — Consentimento do Paciente</span>
+          {form.lgpdAceite&&<span style={{background:"#1a5fa8",color:"#fff",fontSize:9,fontWeight:800,borderRadius:10,padding:"2px 8px",marginLeft:"auto"}}>✓ REGISTRADO</span>}
+        </div>
+        <p style={{fontSize:11,color:"#475569",lineHeight:1.6,marginBottom:12}}>
+          O paciente deve ser informado sobre o tratamento dos seus dados de saúde conforme a <strong>Lei nº 13.709/2018 (LGPD)</strong>. O aceite será registrado com data e hora para fins de auditoria.
+        </p>
+        <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer",background:"#fff",border:`1.5px solid ${form.lgpdAceite?"#1a5fa8":"#dce8f5"}`,borderRadius:9,padding:"10px 12px"}}>
+          <input type="checkbox" checked={form.lgpdAceite||false}
+            onChange={e=>{
+              setF("lgpdAceite",e.target.checked);
+              setF("lgpdAceiteTs",e.target.checked?new Date().toISOString():"");
+            }}
+            style={{width:17,height:17,accentColor:"#1a5fa8",flexShrink:0,marginTop:1}}/>
+          <span style={{fontSize:11.5,color:"#0d2137",fontWeight:600,lineHeight:1.5}}>
+            O paciente <strong>{form.nm||"(nome não preenchido)"}</strong> foi informado e <strong style={{color:"#1a5fa8"}}>consente</strong> com o tratamento dos seus dados pessoais e de saúde pela Clínica Dra. Ilza Ezequiel, nos termos da Política de Privacidade (LGPD).
+          </span>
+        </label>
+        {form.lgpdAceite&&<p style={{fontSize:10,color:"#1a5fa8",marginTop:8,textAlign:"center"}}>
+          ✅ Aceite registrado em {new Date(form.lgpdAceiteTs).toLocaleString("pt-BR")} · Um e-mail de confirmação será enviado ao paciente.
+        </p>}
+        {!form.lgpdAceite&&<p style={{fontSize:10,color:"#d97706",marginTop:8,display:"flex",alignItems:"center",gap:5}}>
+          ⚠️ O consentimento é obrigatório pela LGPD para tratamento de dados de saúde. O cadastro pode prosseguir, mas regularize assim que possível.
+        </p>}
+      </div>
+
       <div style={gRow()}>
         {gField("Status do Paciente",<div style={{display:"flex",gap:8}}>
           {["Ativo","Inativo"].map(s=>(
@@ -2981,14 +3052,6 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
   const [prontForm, setProntForm] = useState({ tipo:"Consulta", resumo:"" });
 
   const meusExames = allExames.filter(e => e.pac === pac.nm);
-  const examAccent = tipo => {
-    if (tipo.includes("EDA")||tipo.includes("Endoscopia")) return { c:"#A8722A", bg:"#FDF3E3" };
-    if (tipo.includes("Colonoscopia"))  return { c:"#6D4E8A", bg:"#F4EFF9" };
-    if (tipo.includes("USG"))           return { c:"#7C3AED", bg:"#F5F3FF" };
-    if (tipo.includes("Vitamina")||tipo.includes("Ferro")||tipo.includes("Hemograma")||tipo.includes("TSH"))
-      return { c:"#9A6A00", bg:"#FFF8E6" };
-    return { c:"#2D7A4F", bg:"#EDF7F1" };
-  };
   const abcColor = { A:T.gr, B:T.b, C:T.txM };
   const abcBg    = { A:T.grB, B:T.bL, C:T.sur2 };
   const InfoRow = ({ label, value }) => value ? (
@@ -3242,38 +3305,22 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, setPage, setPacFi
 
 // ─── PAGE: PACIENTES — SEM avatar na tabela ───────────────────────────────────
 
-function PopupNovoExame({ onClose, onSave, pacInicial="", pats: patsFromParent=null }) {
-  // Normaliza objeto Firebase {0:{...},1:{...}} → array
-  function normalizePats(v) {
-    if (!v) return [];
-    if (Array.isArray(v)) return v.filter(Boolean);
-    if (typeof v === "object") return Object.values(v).filter(Boolean);
-    return [];
-  }
-  const [pacientes, setPacientes] = useState(()=>{
-    if (patsFromParent && patsFromParent.length > 0) return patsFromParent;
-    return normalizePats(safeLsGet("crm_pats_v26"));
-  });
+function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
+  // Lê pacientes direto do Firebase (polling já feito pelo CRM pai)
+  const [pacientes, setPacientes] = useState(()=>safeLsGet("crm_pats_v26"));
   useEffect(()=>{
-    if (patsFromParent && patsFromParent.length > 0) {
-      setPacientes(patsFromParent);
-      return;
-    }
-    fbRead("crm_data/crm_pats_v26").then(v=>{
-      const arr = normalizePats(v);
-      if (arr.length > 0) setPacientes(arr);
-    });
-  },[patsFromParent]);
+    fbRead("crm_data/crm_pats_v26").then(v=>{ if(v&&Array.isArray(v)&&v.length>0) setPacientes(v); });
+  },[]);
   const [pacObj, setPacObj] = useState(null);
   const [pac, setPac] = useState(pacInicial);
   const [pacOpen, setPacOpen] = useState(false);
   const [pacQ, setPacQ] = useState(pacInicial);
   const pacRef = useRef();
-  const pacFiltrados = pacientes.filter(p=>(p.nome||p.name||"").toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
+  const pacFiltrados = pacientes.filter(p=>pacNm(p).toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
 
   const [dt, setDt] = useState("");
   function selecionarPaciente(p) {
-    const nome=p.nome||p.name||"";
+    const nome=pacNm(p);
     setPac(nome); setPacQ(nome); setPacObj(p); setPacOpen(false);
     if(!dt) setDt(new Date(Date.now()+7*86400000).toISOString().slice(0,10));
   }
@@ -3290,11 +3337,11 @@ function PopupNovoExame({ onClose, onSave, pacInicial="", pats: patsFromParent=n
     prev.includes(nome) ? prev.filter(x=>x!==nome) : [...prev, nome]
   );
   const pacInfo = pacObj ? [
-    pacObj.telefone&&{icon:"📞",label:"Telefone",val:pacObj.telefone},
+    (pacObj.tel||pacObj.telefone)&&{icon:"📞",label:"Telefone",val:pacObj.tel||pacObj.telefone},
     pacObj.whatsapp&&{icon:"💬",label:"WhatsApp",val:pacObj.whatsapp},
     pacObj.plano&&{icon:"🏥",label:"Plano",val:pacObj.plano},
     pacObj.cpf&&{icon:"🪪",label:"CPF",val:pacObj.cpf},
-    pacObj.dn&&{icon:"🎂",label:"Nasc.",val:pacObj.dn},
+    (pacObj.nasc||pacObj.dob||pacObj.dn)&&{icon:"🎂",label:"Nasc.",val:pacObj.nasc||pacObj.dob||pacObj.dn},
   ].filter(Boolean) : [];
   return (
     <Modal title="Solicitar exames" onClose={onClose} width={560}>
@@ -3321,9 +3368,9 @@ function PopupNovoExame({ onClose, onSave, pacInicial="", pats: patsFromParent=n
               background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,
               boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:260,overflowY:"auto"}}>
               {pacFiltrados.length>0?pacFiltrados.map(p=>{
-                const nome=p.nome||p.name||"—";
+                const nome=pacNm(p);
                 const ini=nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
-                const sub=[p.plano,p.telefone||p.whatsapp].filter(Boolean).join(" · ");
+                const sub=[p.plano,p.tel||p.telefone||p.whatsapp].filter(Boolean).join(" · ");
                 return(<div key={p.id||nome} onClick={()=>selecionarPaciente(p)}
                   style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",cursor:"pointer",
                     borderBottom:`1px solid ${T.br}`,transition:"background .1s"}}
@@ -3344,7 +3391,7 @@ function PopupNovoExame({ onClose, onSave, pacInicial="", pats: patsFromParent=n
                   <div style={{fontSize:11,color:T.txS,marginTop:4}}>Você pode digitar para usar esse nome</div>
                 </div>
               )}
-              {pacQ.trim()&&!pacFiltrados.find(p=>(p.nome||p.name||"")===pacQ.trim())&&(
+              {pacQ.trim()&&!pacFiltrados.find(p=>pacNm(p)===pacQ.trim())&&(
                 <div onClick={()=>{setPac(pacQ.trim());setPacObj(null);setPacOpen(false);}}
                   style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",
                     background:T.bL,borderTop:`1px solid ${T.br}`}}
@@ -4207,7 +4254,7 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
 
 
 
-function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPacFiltro, pats=[] }) {
+function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPacFiltro }) {
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
   const byPac    = pacFiltro ? exames.filter(e=>e.pac===pacFiltro) : exames;
@@ -4215,14 +4262,7 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
     e.pac.toLowerCase().includes(q.toLowerCase()) ||
     e.tipo.toLowerCase().includes(q.toLowerCase())
   );
-  const examAccent = tipo => {
-    if (tipo.includes("EDA")||tipo.includes("Endoscopia")) return { c:"#A8722A", bg:"#FDF3E3" };
-    if (tipo.includes("Colonoscopia"))  return { c:"#6D4E8A", bg:"#F4EFF9" };
-    if (tipo.includes("USG"))           return { c:"#7C3AED", bg:"#F5F3FF" };
-    if (tipo.includes("Vitamina")||tipo.includes("Ferro")||tipo.includes("Hemograma")||tipo.includes("TSH"))
-      return { c:"#9A6A00", bg:"#FFF8E6" };
-    return { c:"#2D7A4F", bg:"#EDF7F1" };
-  };
+  // examAccent disponível globalmente
   return (
     <div className="page" style={{ padding:"24px 28px 48px", display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
@@ -4280,7 +4320,6 @@ function PageExames({ usuario, estoqueState, exames, setExames, pacFiltro, setPa
 
       {showNew && (
         <PopupNovoExame onClose={()=>setShowNew(false)}
-          pats={pats}
           onSave={novo=>{ setExames(p=>[novo,...p]); setShowNew(false); }} />
       )}
     </div>
@@ -5002,52 +5041,27 @@ const CAL_LEGENDA = [
   {label:"Bloqueio Médica",     cor:"#c0392b"},
 ];
 
-function PopupNovaConsulta({ onClose, onSave, pats: patsFromParent=null }) {
-  // ── busca de pacientes (mesmo padrão do PopupNovoExame) ──
-  function normalizePats(v) {
-    if (!v) return [];
-    if (Array.isArray(v)) return v.filter(Boolean);
-    if (typeof v === "object") return Object.values(v).filter(Boolean);
-    return [];
-  }
-  const [pacientes, setPacientes] = useState(()=>{
-    if (patsFromParent && patsFromParent.length > 0) return patsFromParent;
-    return normalizePats(safeLsGet("crm_pats_v26"));
+function PopupNovaConsulta({ onClose, onSave }) {
+  const [form, setForm] = useState({
+    pac:"", dt:"", hr:"", tipo:"Presencial",
+    proc:"Consulta Gastroenterologia", st:"Aguardando", obs:""
   });
-  useEffect(()=>{
-    if (patsFromParent && patsFromParent.length > 0) { setPacientes(patsFromParent); return; }
-    fbRead("crm_data/crm_pats_v26").then(v=>{ const arr=normalizePats(v); if(arr.length>0) setPacientes(arr); });
-  },[patsFromParent]);
+  const f = (k,v) => setForm(p=>({...p,[k]:v}));
 
-  const [pacObj, setPacObj] = useState(null);
+  // ── Busca de pacientes com autocomplete ──
+  const [pacientes, setPacientes] = useState([]);
   const [pacQ, setPacQ] = useState("");
-  const [pacNome, setPacNome] = useState("");
   const [pacOpen, setPacOpen] = useState(false);
   const pacRef = useRef();
-  const pacFiltrados = pacientes.filter(p=>(p.nome||p.name||"").toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
+  useEffect(()=>{
+    fbRead("crm_data/crm_pats_v26").then(v=>{ if(v&&Array.isArray(v)&&v.length>0) setPacientes(v); });
+  },[]);
   useEffect(()=>{
     function h(e){ if(pacRef.current&&!pacRef.current.contains(e.target)) setPacOpen(false); }
     document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[]);
-  function selecionarPac(p) {
-    const nome=p.nome||p.name||"";
-    setPacNome(nome); setPacQ(nome); setPacObj(p); setPacOpen(false);
-  }
-
-  const [form, setForm] = useState({
-    dt:"", hr:"", tipo:"Presencial",
-    proc:"Consulta Gastroenterologia", st:"Aguardando", obs:""
-  });
-  const f = (k,v) => setForm(p=>({...p,[k]:v}));
-
-  // dados extras do paciente selecionado
-  const pacInfo = pacObj ? [
-    pacObj.telefone&&{icon:"📞",label:"Telefone",val:pacObj.telefone},
-    pacObj.whatsapp&&{icon:"💬",label:"WhatsApp",val:pacObj.whatsapp},
-    pacObj.plano&&{icon:"🏥",label:"Plano",val:pacObj.plano},
-    pacObj.dn&&{icon:"🎂",label:"Nasc.",val:pacObj.dn},
-  ].filter(Boolean) : [];
+  const pacFiltrados = pacientes.filter(p=>pacNm(p).toLowerCase().includes(pacQ.toLowerCase())).slice(0,8);
 
   return (
     <Modal title="Agendar consulta" onClose={onClose} width={520}>
@@ -5055,57 +5069,42 @@ function PopupNovaConsulta({ onClose, onSave, pats: patsFromParent=null }) {
         <div style={{ gridColumn:"1/-1" }}>
           <Fld label="Paciente">
             <div ref={pacRef} style={{position:"relative"}}>
-              <div style={{position:"relative"}}>
-                <div style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
-                  <Ic n="search" sz={14} c={pacNome?T.b:T.txS}/>
-                </div>
-                <input style={{...inp,paddingLeft:34,paddingRight:36,
-                  borderColor:pacNome?T.b:T.br,borderWidth:pacNome?"1.5px":"1px",
-                  background:pacNome?T.bL:T.sur,fontWeight:pacNome?600:400}}
-                  value={pacQ} placeholder={pacientes.length===0?"Digite o nome...":"Buscar paciente..."}
-                  onChange={e=>{setPacQ(e.target.value);setPacNome("");setPacObj(null);setPacOpen(true);}}
-                  onFocus={()=>setPacOpen(true)} autoFocus/>
-                {pacNome&&(<div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
-                  width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",
-                  justifyContent:"center",cursor:"pointer"}}
-                  onClick={()=>{setPacNome("");setPacQ("");setPacObj(null);setPacOpen(false);}}>
-                  <Ic n="close" sz={10} c="#fff" sw={2.5}/></div>)}
+              <div style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+                <Ic n="search" sz={14} c={form.pac?T.b:T.txS}/>
               </div>
+              <input style={{...inp,paddingLeft:34,borderColor:form.pac?T.b:T.br,borderWidth:form.pac?"1.5px":"1px",background:form.pac?T.bL:T.sur,fontWeight:form.pac?600:400}}
+                value={pacQ} placeholder="Buscar paciente cadastrado..."
+                onChange={e=>{setPacQ(e.target.value);f("pac","");setPacOpen(true);}}
+                onFocus={()=>setPacOpen(true)} />
+              {form.pac&&<div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}
+                onClick={()=>{f("pac","");setPacQ("");setPacOpen(false);}}>
+                <Ic n="close" sz={10} c="#fff" sw={2.5}/></div>}
               {pacOpen&&pacQ.length>0&&(
-                <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:9999,
-                  background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,
-                  boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:240,overflowY:"auto"}}>
+                <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:9999,background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:240,overflowY:"auto"}}>
                   {pacFiltrados.length>0?pacFiltrados.map(p=>{
-                    const nome=p.nome||p.name||"—";
+                    const nome=pacNm(p);
                     const ini=nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
-                    const sub=[p.plano,p.telefone||p.whatsapp].filter(Boolean).join(" · ");
-                    return(<div key={p.id||nome} onClick={()=>selecionarPac(p)}
-                      style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",cursor:"pointer",
-                        borderBottom:`1px solid ${T.br}`,transition:"background .1s"}}
+                    const sub=[p.plano,p.tel||p.whatsapp].filter(Boolean).join(" · ");
+                    return(<div key={p.id||nome} onClick={()=>{f("pac",nome);setPacQ(nome);setPacOpen(false);}}
+                      style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.br}`}}
                       onMouseEnter={e=>e.currentTarget.style.background=T.bL}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
-                        background:`linear-gradient(135deg,${T.b},${T.b}99)`,
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                        fontSize:12,fontWeight:800,color:"#fff"}}>{ini}</div>
+                      <div style={{width:34,height:34,borderRadius:9,flexShrink:0,background:`linear-gradient(135deg,${T.b},${T.b}99)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff"}}>{ini}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,color:T.tx}}>{nome}</div>
-                        {sub&&<div style={{fontSize:11,color:T.txS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</div>}
+                        {sub&&<div style={{fontSize:11,color:T.txS}}>{sub}</div>}
                       </div>
                     </div>);
                   }):(
-                    <div style={{padding:"16px",textAlign:"center"}}>
-                      <div style={{fontSize:13,color:T.txM}}>{pacientes.length===0?"Nenhum paciente cadastrado":`Sem resultado para "${pacQ}"`}</div>
-                      <div style={{fontSize:11,color:T.txS,marginTop:4}}>Você pode digitar para usar esse nome</div>
+                    <div style={{padding:"14px",textAlign:"center"}}>
+                      <div style={{fontSize:12,color:T.txM}}>Sem resultado para "{pacQ}"</div>
+                      <div style={{fontSize:11,color:T.txS,marginTop:3}}>Você pode digitar para usar esse nome</div>
                     </div>
                   )}
-                  {pacQ.trim()&&!pacFiltrados.find(p=>(p.nome||p.name||"")===pacQ.trim())&&(
-                    <div onClick={()=>{setPacNome(pacQ.trim());setPacObj(null);setPacOpen(false);}}
-                      style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",
-                        background:T.bL,borderTop:`1px solid ${T.br}`}}
-                      onMouseEnter={e=>e.currentTarget.style.background=`${T.b}18`}
-                      onMouseLeave={e=>e.currentTarget.style.background=T.bL}>
-                      <Ic n="plus" sz={13} c={T.b}/>
+                  {pacQ.trim()&&!pacFiltrados.find(p=>pacNm(p)===pacQ.trim())&&(
+                    <div onClick={()=>{f("pac",pacQ.trim());setPacOpen(false);}}
+                      style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:"pointer",background:T.bL,borderTop:`1px solid ${T.br}`}}>
+                      <Ic n="plus" sz={12} c={T.b}/>
                       <div><div style={{fontSize:12,fontWeight:700,color:T.b}}>Usar "{pacQ.trim()}"</div>
                         <div style={{fontSize:10,color:T.txS}}>Paciente não cadastrado</div></div>
                     </div>
@@ -5113,24 +5112,6 @@ function PopupNovaConsulta({ onClose, onSave, pats: patsFromParent=null }) {
                 </div>
               )}
             </div>
-            {pacObj&&pacInfo.length>0&&(
-              <div style={{marginTop:8,borderRadius:12,border:`1.5px solid ${T.b}30`,
-                background:`linear-gradient(135deg,${T.bL},${T.sur})`,padding:"8px 14px"}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.b,marginBottom:4,display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{width:6,height:6,borderRadius:"50%",background:T.gr,display:"inline-block"}}/>
-                  Dados do paciente
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 12px"}}>
-                  {pacInfo.map(({icon,label,val})=>(
-                    <div key={label} style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
-                      <span style={{fontSize:12}}>{icon}</span>
-                      <span style={{fontSize:10,color:T.txS}}>{label}:</span>
-                      <span style={{fontSize:11,fontWeight:600,color:T.tx,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </Fld>
         </div>
         <Fld label="Data">
@@ -5179,9 +5160,8 @@ function PopupNovaConsulta({ onClose, onSave, pats: patsFromParent=null }) {
         paddingTop:16, borderTop:`1px solid ${T.br}` }}>
         <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={()=>{
-          const nomeFinal = pacNome.trim();
-          if(!nomeFinal||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
-          const nova = {...form, pac:nomeFinal, id:"c"+Date.now(), mod: form.tipo};
+          if(!form.pac.trim()||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
+          const nova = {...form, id:"c"+Date.now(), mod: form.tipo};
           onSave(nova);
           // Email automático via EmailJS
           const link_c = nova.tipo==="Teleconsulta"
@@ -5197,7 +5177,7 @@ function PopupNovaConsulta({ onClose, onSave, pats: patsFromParent=null }) {
 
 // ─── PAGE: CONSULTAS — SEM avatar na timeline ─────────────────────────────────
 
-function PageConsultas({ usuario, consultasProp, setConsultasProp, pats=[] }) {
+function PageConsultas({ usuario, consultasProp, setConsultasProp }) {
   // Se o CRM pai passar as props (Firebase já sincronizado), usa elas.
   // Caso contrário cria hook próprio como fallback (compatibilidade).
   const [consultasLocal, setConsultasLocal] = useFirebaseData("crm_data/crm_consultas_v26", "crm_consultas_v26", []);
@@ -5298,7 +5278,6 @@ function PageConsultas({ usuario, consultasProp, setConsultasProp, pats=[] }) {
 
       {showNew && (
         <PopupNovaConsulta onClose={()=>setShowNew(false)}
-          pats={pats}
           onSave={novo=>setConsultas(p=>[...p,novo].sort((a,b)=>a.dt>b.dt?1:-1))} />
       )}
     </div>
@@ -6763,9 +6742,9 @@ function PageAdmin({usuario,users,setUsers}){
               {ok:true,  item:"Autenticação com senha antes de acessar dados", nota:"Login obrigatório"},
               {ok:true,  item:"Log de auditoria de todos os acessos", nota:"Registrado no Firebase"},
               {ok:true,  item:"Imutabilidade de registros médicos (prontuários)", nota:"Campo locked:true + hash"},
-              {ok:false, item:"Encarregado de Dados (DPO) formalmente designado", nota:"Nomear formalmente — pode ser a própria Dra. Ilza para consultório individual"},
-              {ok:false, item:"Política de Privacidade publicada e acessível aos pacientes", nota:"Criar documento simples explicando coleta e uso dos dados"},
-              {ok:false, item:"Consentimento do paciente registrado no cadastro", nota:"Adicionar campo de aceite no cadastro de novo paciente"},
+              {ok:true,  item:"Encarregado de Dados (DPO) formalmente designado", nota:"Dra. Ilza Ezequiel — privacidade@drailzaezequiel.com.br · Versão 1.0"},
+              {ok:true,  item:"Política de Privacidade publicada e aceita pelos pacientes", nota:"Documento v1.0 gerado · Aceite bloqueante na Sala Virtual · E-mail LGPD automático no cadastro"},
+              {ok:true,  item:"Consentimento do paciente registrado no cadastro", nota:"Step LGPD na Sala Virtual (obrigatório) + campo de aceite no CRM com timestamp e trilha Firebase"},
               {ok:false, item:"Relatório de Impacto à Proteção de Dados (RIPD)", nota:"Necessário para clínicas — documento formal, geralmente jurídico"},
               {ok:false, item:"Certificado digital ICP-Brasil para assinatura de documentos", nota:"Necessário para prontuário 100% digital — dispensável com papel"},
               {ok:false, item:"Prazo de guarda de dados: mínimo 20 anos (CFM)", nota:"Firebase Spark não garante — migrar para Blaze com export automático"},
@@ -9855,6 +9834,22 @@ function Topbar({ page, usuario, onMenuToggle, isMobile }) {
    Firebase é a ÚNICA fonte de verdade — localStorage completamente removido.
    Polling a cada 3s garante que todos os dispositivos vejam os mesmos dados.
 ═══════════════════════════════════════════════════════════════════════ */
+// ─── examAccent: função global (usada por ExameCard, PopupPaciente e PageExames) ─
+function examAccent(tipo = "") {
+  if (tipo.includes("EDA")||tipo.includes("Endoscopia")) return { c:"#A8722A", bg:"#FDF3E3" };
+  if (tipo.includes("Colonoscopia"))  return { c:"#6D4E8A", bg:"#F4EFF9" };
+  if (tipo.includes("USG"))           return { c:"#7C3AED", bg:"#F5F3FF" };
+  if (tipo.includes("Vitamina")||tipo.includes("Ferro")||tipo.includes("Hemograma")||tipo.includes("TSH"))
+    return { c:"#9A6A00", bg:"#FFF8E6" };
+  if (tipo.includes("SIBO")||tipo.includes("Respirat"))  return { c:"#0F766E", bg:"#F0FDF9" };
+  if (tipo.includes("pH")||tipo.includes("Manometria"))  return { c:"#1D4ED8", bg:"#EFF6FF" };
+  return { c:"#2D7A4F", bg:"#EDF7F1" };
+}
+
+// ─── pacNm: normaliza o campo nome de paciente em qualquer formato ─────────────
+// Pacientes do CRM usam p.nm; pacientes vindos da Sala Virtual usam p.nome/p.name
+function pacNm(p) { return p?.nm || p?.nome || p?.name || ""; }
+
 const FB_URL = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
 
 // Se as regras do RTDB exigirem auth, defina o Database Secret aqui.
@@ -9962,23 +9957,14 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
 
       fbAvailableRef.current = true;
       const isArr = Array.isArray(defaultValue);
-
-      // Firebase RTDB retorna objeto {0:{...},1:{...}} quando salvo como array JS
-      // Normaliza para array antes de qualquer checagem
-      let normalized = val;
-      if (isArr && val !== null && typeof val === "object" && !Array.isArray(val)) {
-        normalized = Object.values(val).filter(Boolean);
-        console.info("[Firebase] Objeto→Array normalizado:", fbPath, "→", normalized.length, "itens");
-      }
-
-      const remoteHasData = isArr ? Array.isArray(normalized) : normalized !== null;
+      const remoteHasData = isArr ? Array.isArray(val) : val !== null;
 
       if (remoteHasData) {
-        const hash = JSON.stringify(normalized);
+        const hash = JSON.stringify(val);
         if (hash !== lastHash) {
           lastHash = hash;
-          setData(normalized);
-          dataRef.current = normalized;
+          setData(val);
+          dataRef.current = val;
         }
       } else {
         // Firebase vazio → tenta migrar localStorage legado
@@ -10184,8 +10170,8 @@ function CRM({usuario,onLogout,users,setUsers}){
     instagram:   <PageInstagram usuario={usuario} patsState={patsState}/>,
     tiktok:      <PageTikTok usuario={usuario} patsState={patsState}/>,
     pacientes:   <PagePacientes usuario={usuario} estoqueState={estoqueState} pats={pats} setPats={setPats} allExames={allExames} setAllExames={setAllExames} setPage={setPage} setPacFiltro={setPacFiltro}/>,
-    exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro} pats={pats}/>,
-    consultas:   <PageConsultas usuario={usuario} consultasProp={crmConsultas} setConsultasProp={setCrmConsultas} pats={pats}/>,
+    exames:      <PageExames usuario={usuario} estoqueState={estoqueState} exames={allExames} setExames={setAllExames} pacFiltro={pacFiltro} setPacFiltro={setPacFiltro}/>,
+    consultas:   <PageConsultas usuario={usuario} consultasProp={crmConsultas} setConsultasProp={setCrmConsultas}/>,
     agenda:      <PageAgenda usuario={usuario}/>,
     financas:    <PageFinancas usuario={usuario}/>,
     estoque:     <PageEstoque usuario={usuario} estoqueState={estoqueState}/>,
