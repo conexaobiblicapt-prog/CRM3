@@ -3111,9 +3111,10 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
       <div style={{ display:"flex", gap:4, marginBottom:18,
         background:T.sur2, borderRadius:10, padding:4, border:`1px solid ${T.br}` }}>
         {[
-          { key:"info",      label:"Informações",              icon:"user" },
-          { key:"prontuario",label:`Prontuário (${prontuarios.length})`, icon:"spark" },
-          { key:"exames",    label:`Exames (${meusExames.length})`,      icon:"exam" },
+          { key:"info",      label:"Informações",                        icon:"user" },
+          { key:"prontuario",label:`Prontuário (${prontuarios.length})`,   icon:"spark" },
+          { key:"exames",    label:`Exames (${meusExames.length})`,        icon:"exam" },
+          { key:"anexos",    label:`Anexos (${(pac.anexos||[]).length})`,  icon:"clip" },
         ].map(t => (
           <button key={t.key} onClick={()=>setTab(t.key)}
             style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center",
@@ -3304,9 +3305,34 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
         <Btn variant="secondary" onClick={onClose}>Fechar</Btn>
         {tab==="prontuario"
           ? <Btn onClick={()=>setShowAddPront(true)} icon="plus">Novo registro</Btn>
-          : <Btn onClick={()=>setShowAddExame(true)} icon="plus">Adicionar exame</Btn>
+          : tab==="anexos"
+            ? null
+            : <Btn onClick={()=>setShowAddExame(true)} icon="plus">Adicionar exame</Btn>
         }
       </div>
+
+      {/* ── Tab: Anexos do paciente */}
+      {tab==="anexos" && (
+        <div>
+          <div style={{ fontSize:12, color:T.txS, marginBottom:14, lineHeight:1.6 }}>
+            📎 Anexe documentos, exames físicos, receitas ou qualquer arquivo relacionado a este paciente.
+          </div>
+          <AnexoBloco
+            anexos={pac.anexos||[]}
+            onAdd={arq=>{
+              const updated={...pac,anexos:[...(pac.anexos||[]),arq]};
+              scheduleAutoSave(updated);
+              if(setPats) setPats(prev=>prev.map(p=>p.id===pac.id?updated:p));
+            }}
+            onRemove={i=>{
+              const updated={...pac,anexos:(pac.anexos||[]).filter((_,idx)=>idx!==i)};
+              scheduleAutoSave(updated);
+              if(setPats) setPats(prev=>prev.map(p=>p.id===pac.id?updated:p));
+            }}
+          />
+          <JsonViewer data={pac} label="Ver dados do paciente (JSON)" />
+        </div>
+      )}
 
       {showAddExame && (
         <PopupNovoExame
@@ -3561,6 +3587,118 @@ function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
 }
 
 // ─── helpers globais de arquivo ──────────────────────────────────────────────
+
+// ─── AnexoBloco — componente reutilizável de múltiplos anexos ────────────────
+function AnexoBloco({ anexos=[], onAdd, onRemove, readOnly=false, compact=false }) {
+  const fileRef = useRef();
+  const [loading, setLoading] = useState(false);
+
+  function handleFile(e) {
+    const f = e.target.files[0]; if (!f) return;
+    if (f.size > 8*1024*1024) { alert("Arquivo muito grande. Máximo 8MB."); return; }
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      onAdd && onAdd({ name:f.name, dataUrl:ev.target.result, ts:new Date().toISOString() });
+      setLoading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    };
+    reader.readAsDataURL(f);
+  }
+
+  return (
+    <div>
+      {anexos.length > 0 && (
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:compact?6:10 }}>
+          {anexos.map((arq, i) => {
+            const isImg = arq.dataUrl?.startsWith("data:image") || /\.(png|jpg|jpeg|gif|webp)$/i.test(arq.name||"");
+            const isPdf = arq.dataUrl?.startsWith("data:application/pdf") || /\.pdf$/i.test(arq.name||"");
+            return (
+              <div key={i} style={{ border:`1.5px solid ${T.grBr}`, borderRadius:10,
+                background:T.grB, padding:compact?"10px 12px":"12px 14px" }}>
+                {isImg && !compact && (
+                  <img src={arq.dataUrl} alt={arq.name}
+                    style={{ width:"100%", maxHeight:180, objectFit:"contain", borderRadius:7,
+                      marginBottom:8, cursor:"pointer" }}
+                    onClick={()=>downloadB64(arq.dataUrl, arq.name)}/>
+                )}
+                {isPdf && !compact && (
+                  <iframe src={arq.dataUrl} title={arq.name}
+                    style={{ width:"100%", height:160, borderRadius:7,
+                      border:`1px solid ${T.br}`, marginBottom:8 }}/>
+                )}
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:18 }}>{fileIcon(arq.name)}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:600, color:T.gr,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{arq.name}</div>
+                    {arq.ts && <div style={{ fontSize:10, color:T.txS }}>
+                      {new Date(arq.ts).toLocaleDateString("pt-BR")} {new Date(arq.ts).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                    </div>}
+                  </div>
+                  <button onClick={()=>downloadB64(arq.dataUrl, arq.name)}
+                    style={{ padding:"4px 10px", borderRadius:7, border:`1px solid ${T.grBr}`,
+                      background:T.sur, color:T.gr, fontSize:11, fontWeight:700, cursor:"pointer" }}>⬇</button>
+                  {!readOnly && (
+                    <button onClick={()=>onRemove&&onRemove(i)}
+                      style={{ width:24, height:24, borderRadius:6, border:"none",
+                        background:T.reB, color:T.re, cursor:"pointer", fontSize:12,
+                        display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!readOnly && (
+        <>
+          <div onClick={()=>fileRef.current?.click()}
+            style={{ border:`2px dashed ${T.brD}`, borderRadius:10,
+              padding:compact?"10px":"16px 12px", textAlign:"center",
+              cursor:"pointer", transition:"all .2s", background:T.sur }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.b;e.currentTarget.style.background=T.bL;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.brD;e.currentTarget.style.background=T.sur;}}>
+            {loading
+              ? <span style={{fontSize:12,color:T.txS}}>⏳ Carregando...</span>
+              : <><span style={{fontSize:compact?16:22}}>📎</span>
+                  <div style={{fontSize:12,fontWeight:600,color:T.txM,marginTop:compact?2:4}}>
+                    {compact ? "Anexar arquivo" : "Clique para anexar (PDF, imagem, doc — máx. 8MB)"}
+                  </div></>
+            }
+          </div>
+          <input ref={fileRef} type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx"
+            style={{display:"none"}} onChange={handleFile}/>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── JsonViewer — mostra dados brutos em JSON (toggle) ───────────────────────
+function JsonViewer({ data, label="Ver dados JSON" }) {
+  const [open, setOpen] = useState(false);
+  const json = JSON.stringify(data, null, 2);
+  return (
+    <div style={{ marginTop:10 }}>
+      <button onClick={()=>setOpen(o=>!o)}
+        style={{ fontSize:11, color:T.txS, background:"none", border:`1px solid ${T.br}`,
+          borderRadius:7, padding:"4px 10px", cursor:"pointer", fontFamily:"monospace" }}>
+        {open ? "▲ Fechar JSON" : `{} ${label}`}
+      </button>
+      {open && (
+        <pre style={{ marginTop:8, background:T.sur2, border:`1px solid ${T.br}`,
+          borderRadius:10, padding:"12px 14px", fontSize:10.5, color:T.txM,
+          overflowX:"auto", maxHeight:260, overflowY:"auto",
+          fontFamily:"monospace", lineHeight:1.6, whiteSpace:"pre-wrap", wordBreak:"break-all" }}>
+          {json}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function fileIcon(name=""){
   const ext=(name||"").split(".").pop().toLowerCase();
   if(ext==="pdf")return "📕";
@@ -3662,30 +3800,29 @@ function PopupEditarExame({ exame, onClose, onSave }) {
 function PopupDetalheExame({ exame, onClose, onUpdate }) {
   const [st,  setSt]  = useState(exame.st  || "Agendado");
   const [obs, setObs] = useState(exame.obs || "");
-  const [arquivo, setArquivo] = useState(
-    exame.arquivo ? { name:exame.arquivoNome, dataUrl:exame.arquivo } : null
-  );
-  const [loading, setLoading] = useState(false);
-  const fileRef = useRef();
+  // Suporte a múltiplos anexos (retro-compatível com campo arquivo legado)
+  const initAnexos = () => {
+    const multi = Array.isArray(exame.anexos) ? exame.anexos : [];
+    if (multi.length === 0 && exame.arquivo) {
+      return [{ name: exame.arquivoNome||"laudo", dataUrl: exame.arquivo, ts: exame.ts||null }];
+    }
+    return multi;
+  };
+  const [anexos, setAnexos] = useState(initAnexos);
   const STATUSES = ["Agendado","Realizado","Cancelado","Pendente","Aguardando"];
   const statusColor = { Agendado:"#1A5FA8",Realizado:"#1A7A52",Cancelado:"#C0392B",Pendente:"#9A6A00",Aguardando:"#7A5018" };
 
-  function handleFile(e){
-    const f=e.target.files[0]; if(!f) return;
-    if(f.size>8*1024*1024){alert("Arquivo muito grande. Máximo 8MB.");return;}
-    setLoading(true);
-    const reader=new FileReader();
-    reader.onload=ev=>{setArquivo({name:f.name,dataUrl:ev.target.result});setLoading(false);};
-    reader.readAsDataURL(f);
-  }
-
   function handleSave(){
-    onUpdate&&onUpdate({...exame,st,obs,arquivo:arquivo?arquivo.dataUrl:null,arquivoNome:arquivo?arquivo.name:null});
+    // mantém campo arquivo legado para compatibilidade
+    const primeiro = anexos[0];
+    onUpdate&&onUpdate({
+      ...exame, st, obs,
+      anexos,
+      arquivo: primeiro?.dataUrl||null,
+      arquivoNome: primeiro?.name||null,
+    });
     onClose();
   }
-
-  const isImg = arquivo&&(arquivo.dataUrl?.startsWith("data:image")||/\.(png|jpg|jpeg|gif|webp)$/i.test(arquivo.name||""));
-  const isPdf = arquivo&&(arquivo.dataUrl?.startsWith("data:application/pdf")||/\.pdf$/i.test(arquivo.name||""));
 
   return (
     <Modal title={`🔬 ${exame.tipo}`} onClose={onClose} width={540}>
@@ -3714,43 +3851,15 @@ function PopupDetalheExame({ exame, onClose, onUpdate }) {
         <textarea style={{...inp,minHeight:64,resize:"vertical"}} value={obs}
           onChange={e=>setObs(e.target.value)} placeholder="Ex.: preparo necessário, laboratório, convênio..."/>
       </Fld>
-      <Fld label={`Resultado / Laudo ${arquivo?"(anexado)":"(opcional)"}`}>
-        {arquivo ? (
-          <div style={{border:`1.5px solid ${T.grBr}`,borderRadius:12,background:T.grB,padding:"14px 16px"}}>
-            {isImg&&<img src={arquivo.dataUrl} alt={arquivo.name}
-              style={{width:"100%",maxHeight:220,objectFit:"contain",borderRadius:8,marginBottom:10,cursor:"pointer"}}
-              onClick={()=>downloadB64(arquivo.dataUrl,arquivo.name)}/>}
-            {isPdf&&<iframe src={arquivo.dataUrl} title={arquivo.name}
-              style={{width:"100%",height:200,borderRadius:8,border:`1px solid ${T.br}`,marginBottom:10}}/>}
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:22}}>{fileIcon(arquivo.name)}</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:600,color:T.gr,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{arquivo.name}</div>
-                <div style={{fontSize:11,color:T.txS,marginTop:2}}>Arquivo anexado · clique para baixar</div>
-              </div>
-              <button onClick={()=>downloadB64(arquivo.dataUrl,arquivo.name)}
-                style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.grBr}`,background:T.sur,color:T.gr,fontSize:11,fontWeight:700,cursor:"pointer"}}>⬇ Baixar</button>
-              <button onClick={()=>{setArquivo(null);if(fileRef.current)fileRef.current.value="";}}
-                style={{width:28,height:28,borderRadius:7,border:"none",background:T.reB,color:T.re,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-            </div>
-          </div>
-        ) : (
-          <div onClick={()=>fileRef.current?.click()}
-            style={{border:`2px dashed ${T.brD}`,borderRadius:12,padding:"22px 16px",textAlign:"center",cursor:"pointer",transition:"all .2s",background:T.sur}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.b;e.currentTarget.style.background=T.bL;}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.brD;e.currentTarget.style.background=T.sur;}}>
-            {loading
-              ? <div style={{color:T.txS,fontSize:13}}>⏳ Carregando arquivo...</div>
-              : <><div style={{fontSize:28,marginBottom:6}}>📎</div>
-                  <div style={{fontSize:13,fontWeight:600,color:T.txM,marginBottom:3}}>Clique para anexar o laudo / resultado</div>
-                  <div style={{fontSize:11,color:T.txS}}>PDF, imagem — máx. 8MB</div></>
-            }
-          </div>
-        )}
-        <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx"
-          style={{display:"none"}} onChange={handleFile}/>
+      <Fld label={`📎 Laudos / Resultados${anexos.length>0?` (${anexos.length} arquivo${anexos.length!==1?"s":""})`:""}`}>
+        <AnexoBloco
+          anexos={anexos}
+          onAdd={arq=>setAnexos(p=>[...p,arq])}
+          onRemove={i=>setAnexos(p=>p.filter((_,idx)=>idx!==i))}
+        />
       </Fld>
-      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}>
+      <JsonViewer data={{...exame,st,obs,anexos}} label="Ver dados do exame (JSON)" />
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:14}}>
         <Btn onClick={onClose} variant="ghost">Fechar</Btn>
         <Btn onClick={handleSave} icon="check">Salvar</Btn>
       </div>
@@ -3803,6 +3912,14 @@ function ExameCard({ e, usuario, onDelete, onEdit }) {
           <span>{e.dt}</span>
           {e.obs && <><span>·</span><span style={{ color:T.txM, fontStyle:"italic", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.obs}</span></>}
         </div>
+        {(e.anexos?.length>0||e.arquivo) && (
+          <div style={{ marginTop:6, display:"flex", alignItems:"center", gap:5 }}>
+            <span style={{ fontSize:11 }}>📎</span>
+            <span style={{ fontSize:10.5, color:T.gr, fontWeight:600 }}>
+              {e.anexos?.length>0 ? `${e.anexos.length} anexo${e.anexos.length!==1?"s":""}` : e.arquivoNome||"Laudo anexado"}
+            </span>
+          </div>
+        )}
       </div>
       {tip && createPortal(
         <div style={{ position:"fixed", left:Math.max(8,pos.x), top:Math.min(pos.y-10,window.innerHeight-200),
@@ -3824,7 +3941,7 @@ function ExameCard({ e, usuario, onDelete, onEdit }) {
   );
 }
 
-function ConsultaRow({ c, usuario, onChangeStatus, onDelete }) {
+function ConsultaRow({ c, usuario, onChangeStatus, onDelete, onEdit }) {
   const [tip, setTip]         = useState(false);
   const [pos, setPos]         = useState({ x:0, y:0 });
   const [detalhe, setDetalhe] = useState(false);
@@ -3969,6 +4086,32 @@ Equipe Dra. Ilza Ezequiel`
               🗑️ Excluir
             </button>
           )}
+        </div>
+
+        {/* ── Anexos da consulta ── */}
+        <div style={{ marginTop:18, paddingTop:16, borderTop:`1px solid ${T.br}` }}>
+          <div style={{ fontSize:12, fontWeight:700, color:T.txM, textTransform:"uppercase",
+            letterSpacing:".07em", marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+            <span>📎</span> Anexos da consulta
+            {(c.anexos||[]).length > 0 && (
+              <span style={{ fontSize:10, fontWeight:600, color:T.b, background:T.bL,
+                borderRadius:99, padding:"1px 7px", border:`1px solid ${T.b}30` }}>
+                {(c.anexos||[]).length}
+              </span>
+            )}
+          </div>
+          <AnexoBloco
+            anexos={c.anexos||[]}
+            onAdd={arq=>{
+              const updated = {...c, anexos:[...(c.anexos||[]),arq]};
+              onEdit&&onEdit(updated);
+            }}
+            onRemove={i=>{
+              const updated = {...c, anexos:(c.anexos||[]).filter((_,idx)=>idx!==i)};
+              onEdit&&onEdit(updated);
+            }}
+          />
+          <JsonViewer data={c} label="Ver dados da consulta (JSON)" />
         </div>
       </div>
     );
@@ -5527,7 +5670,8 @@ function PageConsultas({ usuario, consultasProp, setConsultasProp }) {
             {byDate[dt].map(c => (
               <ConsultaRow key={c.id} c={c} usuario={usuario}
                 onChangeStatus={ns=>setConsultas(p=>p.map(x=>x.id===c.id?{...x,st:ns}:x))}
-                onDelete={()=>setConsultas(p=>p.filter(x=>x.id!==c.id))} />
+                onDelete={()=>setConsultas(p=>p.filter(x=>x.id!==c.id))}
+                onEdit={upd=>setConsultas(p=>p.map(x=>x.id===upd.id?upd:x))} />
             ))}
           </div>
         </div>
