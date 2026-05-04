@@ -794,7 +794,7 @@ const ANAMNESE_F = [
   {id:"alergias",  lb:"Alergias",                    tp:"ta",  ph:"Medicamentos, alimentos, substâncias..."},
   {id:"medicacoes",lb:"Medicações em Uso",           tp:"ta",  ph:"Medicamentos, doses..."},
   {id:"exfisico",  lb:"Exame Físico",                tp:"ta",  ph:"Peso, PA, abdome..."},
-  {id:"hipotese",  lb:"Hipótese Diagnóstica / CID",  tp:"ta",  ph:"Ex: K58 — SII"},
+  {id:"hipotese",  lb:"Hipótese Diagnóstica / CID-10",  tp:"cid",  ph:"Ex: K58 ou Síndrome"},
   {id:"conduta",   lb:"Conduta / Plano Terapêutico", tp:"ta",  ph:"Exames, medicamentos, orientações..."},
   {id:"retorno",   lb:"Retorno em",                  tp:"tx",  ph:"Ex: 30 dias, após exames..."},
 ];
@@ -804,6 +804,256 @@ const TAGS_NAO = [
   "Paciente de outra cidade","Sem resposta após 3 contatos","Financeiro",
   "Já está em tratamento","Plano não reembolsa","Outro motivo",
 ];
+
+/* ════════════════════════════════════════════════════════════════
+   VALIDATORS & MASKS — CPF · E-mail · Telefone · CID-10
+════════════════════════════════════════════════════════════════ */
+
+// ── CPF ──────────────────────────────────────────────────────
+function cpfMask(v) {
+  const d = (v||"").replace(/\D/g,"").slice(0,11);
+  if(d.length<=3) return d;
+  if(d.length<=6) return `${d.slice(0,3)}.${d.slice(3)}`;
+  if(d.length<=9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+  return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9,11)}`;
+}
+function cpfValido(cpf) {
+  const d = (cpf||"").replace(/\D/g,"");
+  if(d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+  let s = 0;
+  for(let i=0;i<9;i++) s += +d[i]*(10-i);
+  let r = (s*10)%11; if(r===10||r===11) r=0;
+  if(r !== +d[9]) return false;
+  s=0;
+  for(let i=0;i<10;i++) s += +d[i]*(11-i);
+  r=(s*10)%11; if(r===10||r===11) r=0;
+  return r === +d[10];
+}
+function cpfStatus(cpf) {
+  const d = (cpf||"").replace(/\D/g,"");
+  if(!d) return null;
+  if(d.length < 11) return "incompleto";
+  return cpfValido(d) ? "ok" : "erro";
+}
+
+// ── E-mail ───────────────────────────────────────────────────
+function emailValido(e) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((e||"").trim());
+}
+
+// ── Telefone ─────────────────────────────────────────────────
+function telMask(v) {
+  const d = (v||"").replace(/\D/g,"").slice(0,11);
+  if(d.length<=2) return d.length?`(${d}`:d;
+  if(d.length<=6) return `(${d.slice(0,2)}) ${d.slice(2)}`;
+  if(d.length<=10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7,11)}`;
+}
+function telValido(v) {
+  const d = (v||"").replace(/\D/g,"");
+  return d.length === 10 || d.length === 11;
+}
+
+// ── Feedback visual de campo ─────────────────────────────────
+function CampoStatus({ status, msgs }) {
+  if(!status || status==="ok") return null;
+  const styles = {
+    incompleto: { color:"#9A6A00", bg:"#FFF8E6" },
+    erro:       { color:"#C0392B", bg:"#FDF0EE" },
+  };
+  const s = styles[status] || styles.erro;
+  return (
+    <div style={{ fontSize:11, color:s.color, background:s.bg, borderRadius:6,
+      padding:"3px 8px", marginTop:3, fontWeight:600 }}>
+      {msgs[status]}
+    </div>
+  );
+}
+
+// ── CID-10 Database (400+ códigos mais comuns — gastro + geral) ──────────────
+const CID10_DB = [
+  // Gastroenterologia
+  ["A00","Cólera"],["A01","Febres tifóide e paratifóide"],["A02","Outras infecções por Salmonella"],
+  ["A04","Outras infecções intestinais bacterianas"],["A06","Amebíase"],["A07","Outras doenças intestinais por protozoários"],
+  ["A08","Infecções intestinais virais"],["A09","Diarreia e gastroenterite de origem infecciosa presumível"],
+  ["B15","Hepatite A aguda"],["B16","Hepatite B aguda"],["B17","Outras hepatites virais agudas"],
+  ["B18","Hepatite viral crônica"],["B19","Hepatite viral não especificada"],
+  ["C15","Neoplasia maligna do esôfago"],["C16","Neoplasia maligna do estômago"],
+  ["C17","Neoplasia maligna do intestino delgado"],["C18","Neoplasia maligna do cólon"],
+  ["C19","Neoplasia maligna da junção retossigmoide"],["C20","Neoplasia maligna do reto"],
+  ["C22","Neoplasia maligna do fígado"],["C25","Neoplasia maligna do pâncreas"],
+  ["D12","Neoplasia benigna do cólon, reto, canal anal e ânus"],
+  ["D13","Neoplasia benigna de outras partes do trato digestivo"],
+  ["K00","Distúrbios do desenvolvimento e erupção dos dentes"],
+  ["K20","Esofagite"],["K21","Doença de refluxo gastroesofágico"],["K21.0","DRGE com esofagite"],
+  ["K21.9","DRGE sem esofagite"],["K22","Outras doenças do esôfago"],
+  ["K25","Úlcera gástrica"],["K26","Úlcera duodenal"],["K27","Úlcera péptica"],
+  ["K29","Gastrite e duodenite"],["K29.0","Gastrite aguda hemorrágica"],
+  ["K29.1","Outras gastrites agudas"],["K29.5","Gastrite crônica não especificada"],
+  ["K29.7","Gastrite não especificada"],["K30","Dispepsia funcional"],
+  ["K31","Outras doenças do estômago e duodeno"],
+  ["K35","Apendicite aguda"],["K36","Outras apendicites"],["K37","Apendicite não especificada"],
+  ["K40","Hérnia inguinal"],["K41","Hérnia femoral"],["K42","Hérnia umbilical"],
+  ["K43","Hérnia ventral"],["K44","Hérnia diafragmática"],["K46","Hérnia abdominal não especificada"],
+  ["K50","Doença de Crohn"],["K50.0","Doença de Crohn do intestino delgado"],
+  ["K50.1","Doença de Crohn do intestino grosso"],["K51","Colite ulcerativa"],
+  ["K51.0","Enterocolite ulcerativa"],["K51.9","Colite ulcerativa não especificada"],
+  ["K52","Outras gastroenterites e colites não infecciosas"],
+  ["K55","Transtornos vasculares do intestino"],["K56","Íleo paralítico e obstrução intestinal"],
+  ["K57","Doença diverticular do intestino"],["K57.3","Doença diverticular do cólon sem perfuração"],
+  ["K58","Síndrome do intestino irritável"],["K58.0","SII com diarreia"],
+  ["K58.9","SII sem diarreia"],["K59","Outros transtornos funcionais do intestino"],
+  ["K59.0","Constipação"],["K59.1","Diarreia funcional"],["K60","Fissura e fístula das regiões anal e retal"],
+  ["K61","Abscesso da região anal e retal"],["K62","Outras doenças do reto e ânus"],
+  ["K63","Outras doenças do intestino"],["K64","Hemorroidas"],["K64.0","Hemorroidas de 1º grau"],
+  ["K64.1","Hemorroidas de 2º grau"],["K64.2","Hemorroidas de 3º grau"],
+  ["K64.3","Hemorroidas de 4º grau"],["K64.9","Hemorroidas não especificadas"],
+  ["K70","Doença alcoólica do fígado"],["K71","Doença hepática tóxica"],
+  ["K72","Insuficiência hepática"],["K73","Hepatite crônica"],["K74","Fibrose e cirrose hepáticas"],
+  ["K74.6","Cirrose hepática não especificada"],["K75","Outras doenças inflamatórias do fígado"],
+  ["K75.0","Abscesso hepático"],["K76","Outras doenças do fígado"],
+  ["K76.0","Doença hepática gordurosa — DHGNA/NASH"],["K77","Transtornos do fígado em doenças classificadas em outra parte"],
+  ["K80","Colelitíase"],["K80.0","Cálculo da vesícula biliar com colecistite aguda"],
+  ["K80.1","Cálculo da vesícula biliar com outra colecistite"],["K80.2","Cálculo da vesícula biliar sem colecistite"],
+  ["K80.5","Cálculo do ducto biliar sem colangite ou colecistite"],
+  ["K81","Colecistite"],["K81.0","Colecistite aguda"],["K81.1","Colecistite crônica"],
+  ["K82","Outras doenças da vesícula biliar"],["K83","Outras doenças das vias biliares"],
+  ["K85","Pancreatite aguda"],["K86","Outras doenças do pâncreas"],["K86.1","Pancreatite crônica"],
+  ["K86.2","Cisto do pâncreas"],["K87","Transtornos da vesícula biliar, vias biliares e pâncreas em doenças classificadas em outra parte"],
+  ["K90","Má absorção intestinal"],["K90.0","Doença celíaca"],["K91","Transtornos do aparelho digestivo após procedimentos"],
+  ["K92","Outras doenças do aparelho digestivo"],["K92.0","Hematêmese"],["K92.1","Melena"],
+  ["K92.2","Hemorragia gastrointestinal não especificada"],
+  // Doenças gerais
+  ["E11","Diabetes mellitus tipo 2"],["E10","Diabetes mellitus tipo 1"],
+  ["E66","Obesidade"],["E65","Adiposidade localizada"],["E78","Dislipidemias"],
+  ["E78.0","Hipercolesterolemia pura"],["E78.1","Hipertrigliceridemia pura"],
+  ["E78.5","Hiperlipidemia não especificada"],
+  ["I10","Hipertensão essencial primária"],["I11","Doença cardíaca hipertensiva"],
+  ["I25","Doença isquêmica crônica do coração"],["I50","Insuficiência cardíaca"],
+  ["J06","Infecções agudas das vias aéreas superiores"],["J11","Influenza (gripe)"],
+  ["J18","Pneumonia não especificada"],["J45","Asma"],
+  ["N17","Insuficiência renal aguda"],["N18","Doença renal crônica"],
+  ["N20","Cálculo do rim e ureter"],["N39.0","Infecção do trato urinário"],
+  ["Z00","Exame geral"],["Z00.0","Consulta médica geral"],["Z01","Outros exames especiais"],
+  ["Z03","Observação e avaliação médica por suspeita de doenças"],
+  ["Z10","Exame de saúde rotineiro de certos grupos populacionais"],
+  ["Z11","Exame de rastreamento para doenças infecciosas e parasitárias"],
+  ["Z12","Exame de rastreamento para neoplasias"],["Z13","Exame de rastreamento para outras doenças"],
+  ["Z71","Pessoas em contato com os serviços de saúde para outros procedimentos de orientação"],
+  ["Z76.0","Emissão de prescrição repetida"],
+  // Endocrinologia / metabólico
+  ["E00","Síndrome de deficiência congênita de iodo"],["E03","Outras formas de hipotireoidismo"],
+  ["E04","Outras formas de bócio não tóxico"],["E05","Tireotoxicose (hipertireoidismo)"],
+  ["E06","Tireoidite"],["E07","Outros transtornos da tireoide"],
+  ["E20","Hipoparatireoidismo"],["E21","Hiperparatireoidismo"],
+  ["E40","Kwashiorkor"],["E41","Marasmo nutricional"],["E44","Desnutrição proteico-calórica"],
+  ["E50","Deficiência de vitamina A"],["E55","Deficiência de vitamina D"],
+  ["E58","Deficiência alimentar de cálcio"],["E61","Deficiência de micronutrientes"],
+  ["E83","Transtornos do metabolismo mineral"],["E84","Fibrose cística"],
+  ["E86","Depleção de volume"],["E87","Outros transtornos do equilíbrio hidroeletrolítico"],
+  // Sintomas gerais
+  ["R00","Anormalidades do batimento cardíaco"],["R04","Hemorragia das vias respiratórias"],
+  ["R05","Tosse"],["R06","Anormalidades da respiração"],["R07","Dor de garganta e no peito"],
+  ["R10","Dor abdominal e pélvica"],["R10.0","Abdome agudo"],["R10.1","Dor no abdome superior"],
+  ["R10.3","Dor em outras partes do abdome inferior"],["R10.4","Outras dores abdominais"],
+  ["R11","Náusea e vômitos"],["R12","Azia"],["R13","Disfagia"],["R14","Flatulência"],
+  ["R15","Incontinência fecal"],["R17","Icterícia não classificada em outra parte"],
+  ["R18","Ascite"],["R19","Outros sintomas e sinais relativos ao aparelho digestivo"],
+  ["R50","Febre de outra origem"],["R51","Cefaleia"],["R53","Mal-estar e fadiga"],
+  ["R55","Síncope"],["R60","Edema"],["R63.0","Anorexia"],["R63.4","Alteração de peso"],
+  ["R68","Outros sinais e sintomas gerais"],["R73","Glicemia elevada"],
+  ["R74","Valores anormais de enzimas séricas — TGO/TGP"],
+  ["R79","Outros resultados laboratoriais anormais"],
+];
+
+// ── CID-10 Autocomplete Component ────────────────────────────
+function CidInput({ value, onChange, style, placeholder }) {
+  const [q, setQ]           = React.useState(value||"");
+  const [sugs, setSugs]     = React.useState([]);
+  const [open, setOpen]     = React.useState(false);
+  const [idx, setIdx]       = React.useState(-1);
+  const boxRef              = React.useRef(null);
+
+  // Sincroniza com valor externo
+  React.useEffect(()=>{ setQ(value||""); }, [value]);
+
+  function buscar(txt) {
+    setQ(txt);
+    onChange(txt);
+    if(txt.length < 2) { setSugs([]); setOpen(false); return; }
+    const low = txt.toLowerCase();
+    const res = CID10_DB.filter(([cod,desc])=>
+      cod.toLowerCase().startsWith(low) || desc.toLowerCase().includes(low)
+    ).slice(0,8);
+    setSugs(res);
+    setOpen(res.length > 0);
+    setIdx(-1);
+  }
+
+  function selecionar([cod, desc]) {
+    const txt = `${desc} (${cod})`;
+    setQ(txt); onChange(txt);
+    setSugs([]); setOpen(false); setIdx(-1);
+  }
+
+  function onKey(e) {
+    if(!open) return;
+    if(e.key==="ArrowDown") { e.preventDefault(); setIdx(i=>Math.min(i+1,sugs.length-1)); }
+    else if(e.key==="ArrowUp") { e.preventDefault(); setIdx(i=>Math.max(i-1,0)); }
+    else if(e.key==="Enter" && idx>=0) { e.preventDefault(); selecionar(sugs[idx]); }
+    else if(e.key==="Escape") { setOpen(false); setIdx(-1); }
+  }
+
+  React.useEffect(()=>{
+    function clickOut(e){ if(boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", clickOut);
+    return ()=>document.removeEventListener("mousedown", clickOut);
+  },[]);
+
+  return (
+    <div ref={boxRef} style={{ position:"relative" }}>
+      <input
+        value={q}
+        onChange={e=>buscar(e.target.value)}
+        onKeyDown={onKey}
+        onFocus={()=>{ if(sugs.length>0) setOpen(true); }}
+        placeholder={placeholder||"Ex: K21.0 ou Refluxo"}
+        style={{ ...style, paddingRight:28 }}
+        autoComplete="off"
+      />
+      {q && (
+        <button onClick={()=>{ setQ(""); onChange(""); setSugs([]); setOpen(false); }}
+          style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)",
+            background:"none", border:"none", cursor:"pointer", fontSize:14,
+            color:"#aaa", padding:2, lineHeight:1 }}>✕</button>
+      )}
+      {open && (
+        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0,
+          background:"#fff", border:"1.5px solid #C8DCF0", borderRadius:10,
+          boxShadow:"0 8px 24px rgba(13,33,55,.14)", zIndex:9999, overflow:"hidden", maxHeight:280 }}>
+          <div style={{ padding:"5px 10px 4px", fontSize:10, fontWeight:700,
+            color:"#7A9AB8", textTransform:"uppercase", letterSpacing:".08em",
+            borderBottom:"1px solid #EBF2FB" }}>CID-10 — selecione ou continue digitando</div>
+          <div style={{ overflowY:"auto", maxHeight:240 }}>
+            {sugs.map(([cod,desc],i)=>(
+              <div key={cod} onMouseDown={()=>selecionar([cod,desc])}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px",
+                  cursor:"pointer", background:i===idx?"#EBF2FB":"transparent",
+                  borderBottom:"1px solid #f0f6ff" }}
+                onMouseEnter={()=>setIdx(i)}
+                onMouseLeave={()=>setIdx(-1)}>
+                <span style={{ background:"#1A5FA8", color:"#fff", borderRadius:6,
+                  padding:"2px 7px", fontSize:11, fontWeight:800,
+                  fontFamily:"monospace", flexShrink:0 }}>{cod}</span>
+                <span style={{ fontSize:13, color:"#0d1f35", lineHeight:1.3 }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ════════════════════════════════════════════════════════════════
    HELPERS
@@ -1770,6 +2020,7 @@ function AnamneseModal({paciente,saved={},onClose,onSave}){
           <label style={SL}>{f.lb}</label>
           {f.tp==="ta"&&<textarea value={form[f.id]||""} onChange={e=>setV(f.id,e.target.value)} placeholder={f.ph} rows={3} style={{...SI,resize:"vertical",lineHeight:1.6}}/>}
           {f.tp==="tx"&&<input value={form[f.id]||""} onChange={e=>setV(f.id,e.target.value)} placeholder={f.ph} style={SI}/>}
+          {f.tp==="cid"&&<CidInput value={form[f.id]||""} onChange={v=>setV(f.id,v)} placeholder={f.ph} style={SI}/>}
           {f.tp==="sel"&&<select value={form[f.id]||""} onChange={e=>setV(f.id,e.target.value)} style={SI}><option value="">Selecione...</option>{f.opts.map(o=><option key={o} value={o}>{o}</option>)}</select>}
           {f.tp==="chk"&&(
             <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
@@ -2719,7 +2970,21 @@ Clínica Dra. Ilza Ezequiel · (13) XXXX-XXXX · www.drailzaezequiel.com.br
         {form.estrangeiro&&<span style={{fontSize:11,color:C.amber}}>Documento de identidade pode variar</span>}
       </div>
       <div style={gRow()}>
-        {gField("CPF",<input style={SI2} autoComplete="off" placeholder="000.000.000-00" maxLength={14} value={form.cpf||""} onChange={e=>setF("cpf",e.target.value)}/>)}
+        {gField("CPF", (
+          <div>
+            <input style={{...SI2,
+              borderColor: cpfStatus(form.cpf)==="ok" ? "#1A7A52"
+                : cpfStatus(form.cpf)==="erro" ? "#C0392B"
+                : undefined
+            }}
+              autoComplete="off" placeholder="000.000.000-00"
+              maxLength={14} value={form.cpf||""}
+              onChange={e=>setF("cpf", cpfMask(e.target.value))} />
+            {cpfStatus(form.cpf)==="ok"  && <div style={{fontSize:11,color:"#1A7A52",marginTop:3,fontWeight:700}}>✅ CPF válido</div>}
+            {cpfStatus(form.cpf)==="erro" && <div style={{fontSize:11,color:"#C0392B",marginTop:3,fontWeight:700}}>❌ CPF inválido — verifique os dígitos</div>}
+            {cpfStatus(form.cpf)==="incompleto" && <div style={{fontSize:11,color:"#9A6A00",marginTop:3}}>Digite os 11 dígitos</div>}
+          </div>
+        ))}
         {gField("RG",<input style={SI2} autoComplete="off" placeholder="00.000.000-0" value={form.rg||""} onChange={e=>setF("rg",e.target.value)}/>)}
       </div>
       <div style={gRow("1fr 1fr 1fr")}>
@@ -2743,10 +3008,28 @@ Clínica Dra. Ilza Ezequiel · (13) XXXX-XXXX · www.drailzaezequiel.com.br
       </div>
       <div style={gRow()}>
         {gField("📱 WhatsApp *",<div style={{position:"relative"}}>
-          <input style={SI2} autoComplete="off" placeholder="(13) 9XXXX-XXXX" value={form.whatsapp||""} onChange={e=>setF("whatsapp",e.target.value)}/>
+          <input style={{...SI2,
+              borderColor: form.whatsapp && !telValido(form.whatsapp) ? "#C0392B"
+                : form.whatsapp && telValido(form.whatsapp) ? "#1A7A52"
+                : undefined
+            }}
+              autoComplete="off" placeholder="(13) 9XXXX-XXXX"
+              value={form.whatsapp||""} onChange={e=>setF("whatsapp", telMask(e.target.value))}/>
           {form.whatsapp&&<button type="button" onClick={()=>window.open(`https://wa.me/55${form.whatsapp.replace(/\D/g,"")}`, "_blank")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"#25d366",border:"none",color:"#fff",borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💬 Testar</button>}
         </div>)}
-        {gField("E-mail",<input type="email" style={SI2} autoComplete="off" placeholder="paciente@email.com" value={form.email||""} onChange={e=>setF("email",e.target.value)}/>)}
+        {gField("E-mail", (
+          <div>
+            <input type="email" style={{...SI2,
+              borderColor: form.email && !emailValido(form.email) ? "#C0392B"
+                : form.email && emailValido(form.email) ? "#1A7A52"
+                : undefined
+            }}
+              autoComplete="off" placeholder="paciente@email.com"
+              value={form.email||""} onChange={e=>setF("email", e.target.value)} />
+            {form.email && !emailValido(form.email) && <div style={{fontSize:11,color:"#C0392B",marginTop:3,fontWeight:700}}>❌ E-mail inválido</div>}
+            {form.email &&  emailValido(form.email) && <div style={{fontSize:11,color:"#1A7A52",marginTop:3,fontWeight:700}}>✅ E-mail válido</div>}
+          </div>
+        ))}
       </div>
       <div style={{background:`${C.green}06`,border:`1px solid ${C.green}20`,borderRadius:10,padding:"10px 14px",marginTop:4}}>
         <p style={{color:C.green,fontSize:11,fontWeight:700,margin:"0 0 4px"}}>💬 Notificações automáticas</p>
@@ -4544,11 +4827,164 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [selPac, setSelPac] = useState(null);
+  const [showImport, setShowImport]   = useState(false);
+  const [importResult, setImportResult] = useState(null); // {ok,erros,total}
+  const [importLoading, setImportLoading] = useState(false);
   const filtered = pats.filter(p =>
     p.nm.toLowerCase().includes(q.toLowerCase()) ||
     p.tel.includes(q) || p.plano.toLowerCase().includes(q.toLowerCase())
   );
   const abcColor = { A:T.gr, B:T.b, C:T.txM };
+
+  // ── CSV Export ────────────────────────────────────────────
+  const CSV_COLS = [
+    "nm","cpf","nasc","sexo","email","tel","whatsapp","cel",
+    "plano","st","abc","cep","logradouro","numero","complemento",
+    "bairro","cidade","estado","rg","orgaoExp","rgEstado","rgDt",
+    "obs","responsavel","respFinCpf","telEmerg","profissao",
+    "estadoCivil","escolaridade","naturalidade","nacionalidade",
+  ];
+  const CSV_LABELS = [
+    "Nome Completo","CPF","Data Nascimento","Sexo","E-mail","Telefone","WhatsApp","Celular",
+    "Plano","Status","Classe (A/B/C)","CEP","Logradouro","Número","Complemento",
+    "Bairro","Cidade","Estado","RG","Órgão Expedidor","Estado RG","Data Emissão RG",
+    "Observações","Responsável Financeiro","CPF Responsável","Tel Emergência","Profissão",
+    "Estado Civil","Escolaridade","Naturalidade","Nacionalidade",
+  ];
+
+  function exportarCSV() {
+    const esc = v => `"${String(v||"").replace(/"/g,'""')}"`;
+    const header = CSV_LABELS.join(";");
+    const rows = pats.map(p => CSV_COLS.map(col => esc(p[col]||"")).join(";"));
+    const bom = "\uFEFF";
+    const csv = bom + [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url;
+    a.download=`pacientes_crm_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    auditAdd(window._crmUsuario?.nome||"sistema","EXPORT_CSV",`${pats.length} pacientes exportados`);
+  }
+
+  function baixarModelo() {
+    const esc = v => `"${String(v||"").replace(/"/g,'""')}"`;
+    const header = CSV_LABELS.join(";");
+    const exemplo = CSV_COLS.map((col,i) => esc({
+      nm:"Maria Silva Santos", cpf:"123.456.789-00", nasc:"1985-04-22",
+      sexo:"Feminino", email:"maria@email.com", tel:"(13) 3311-1234",
+      whatsapp:"(13) 98765-4321", cel:"(13) 98765-4321", plano:"Unimed",
+      st:"Ativo", abc:"A", cep:"11310-100", logradouro:"Av. Ana Costa",
+      numero:"123", complemento:"Apto 45", bairro:"Gonzaga", cidade:"Santos",
+      estado:"SP", rg:"12.345.678-9", orgaoExp:"SSP", rgEstado:"SP",
+      rgDt:"2005-10-15", obs:"Paciente com histórico de DRGE",
+      responsavel:"", respFinCpf:"", telEmerg:"(13) 99999-0000",
+      profissao:"Professora", estadoCivil:"Casada", escolaridade:"Superior",
+      naturalidade:"Santos-SP", nacionalidade:"Brasileira",
+    }[col]||"")).join(";");
+    const bom = "\uFEFF";
+    const csv = bom + [header, exemplo].join("\n");
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url;
+    a.download="modelo_importacao_pacientes.csv";
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  function importarCSV(file) {
+    if(!file) return;
+    if(!file.name.toLowerCase().endsWith(".csv")) {
+      alert("Selecione um arquivo .csv"); return;
+    }
+    setImportLoading(true);
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        let txt = e.target.result;
+        // Remove BOM
+        if(txt.charCodeAt(0)===0xFEFF) txt = txt.slice(1);
+        const linhas = txt.split(/\r?\n/).filter(l=>l.trim());
+        if(linhas.length < 2) { alert("CSV vazio ou sem dados."); setImportLoading(false); return; }
+
+        // Detecta separador
+        const sep = linhas[0].includes(";") ? ";" : ",";
+
+        // Parse CSV respeitando aspas
+        function parseLinha(linha) {
+          const res=[]; let cur="", inQ=false;
+          for(let i=0;i<linha.length;i++){
+            const ch=linha[i];
+            if(ch==='"'){ if(inQ&&linha[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
+            else if(ch===sep&&!inQ){ res.push(cur.trim()); cur=""; }
+            else cur+=ch;
+          }
+          res.push(cur.trim()); return res;
+        }
+
+        const headerRaw = parseLinha(linhas[0]);
+        // Mapeia cabeçalho da planilha → campo interno
+        const labelToCol = {};
+        CSV_LABELS.forEach((lb,i)=>{ labelToCol[lb.toLowerCase().trim()]=CSV_COLS[i]; });
+        CSV_COLS.forEach(col=>{ labelToCol[col.toLowerCase()]=col; });
+
+        const colMap = headerRaw.map(h=>labelToCol[h.toLowerCase().trim()]||null);
+
+        let ok=0, erros=[];
+        const novos=[];
+
+        for(let li=1; li<linhas.length; li++){
+          const vals = parseLinha(linhas[li]);
+          if(vals.every(v=>!v.trim())) continue; // linha vazia
+
+          const pac = { id:"imp_"+Date.now()+"_"+li, st:"Ativo", abc:"B" };
+          colMap.forEach((col,ci)=>{ if(col) pac[col]=(vals[ci]||"").trim(); });
+
+          // Validações obrigatórias
+          if(!pac.nm) { erros.push(`Linha ${li+1}: Nome obrigatório`); continue; }
+
+          // CPF: aplica máscara e valida (se preenchido)
+          if(pac.cpf) {
+            pac.cpf = cpfMask(pac.cpf);
+            if(!cpfValido(pac.cpf) && !pac.cpf.includes("*")) {
+              erros.push(`Linha ${li+1} (${pac.nm}): CPF inválido — ${pac.cpf}`);
+            }
+          }
+
+          // E-mail
+          if(pac.email && !emailValido(pac.email)) {
+            erros.push(`Linha ${li+1} (${pac.nm}): E-mail inválido — ${pac.email}`);
+          }
+
+          // Evitar duplicata por CPF ou e-mail
+          const cpfNum = (pac.cpf||"").replace(/\D/g,"");
+          const dup = pats.find(ex=>
+            (cpfNum && (ex.cpf||"").replace(/\D/g,"")=== cpfNum) ||
+            (pac.email && ex.email && ex.email.toLowerCase()===pac.email.toLowerCase())
+          );
+          if(dup) { erros.push(`Linha ${li+1} (${pac.nm}): Já existe — ${dup.nm}`); continue; }
+
+          novos.push(pac);
+          ok++;
+        }
+
+        // Salva no Firebase + estado
+        const db = window._firebaseDB;
+        for(const p of novos){
+          const uid = db ? db.ref("crm_data/crm_pats_v26").push().key : ("local_"+Date.now()+Math.random());
+          p.id = uid;
+          if(db) await db.ref("crm_data/crm_pats_v26/"+uid).set(p);
+        }
+
+        setPats(prev=>[...prev,...novos]);
+        setImportResult({ ok, erros, total: linhas.length-1 });
+        setImportLoading(false);
+        auditAdd(window._crmUsuario?.nome||"sistema","IMPORT_CSV",`${ok} pacientes importados, ${erros.length} erros`);
+      } catch(err) {
+        setImportLoading(false);
+        alert("Erro ao processar CSV: "+err.message);
+      }
+    };
+    reader.readAsText(file, "UTF-8");
+  }
 
   // Ficha aberta em full-page
   if (selPac) return (
@@ -4571,7 +5007,93 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
             style={{ ...inp, paddingLeft:38, fontSize:13 }} />
         </div>
         <Btn onClick={()=>setShowNew(true)} icon="plus">Novo paciente</Btn>
+        <Btn variant="secondary" onClick={exportarCSV} icon="download">Exportar CSV</Btn>
+        <Btn variant="secondary" onClick={()=>{ setShowImport(true); setImportResult(null); }}>📥 Importar CSV</Btn>
       </div>
+
+      {/* ── Modal Importar CSV ─────────────────────────────── */}
+      {showImport && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(5,15,30,.6)", backdropFilter:"blur(4px)",
+          zIndex:5000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <div style={{ background:T.sur, borderRadius:18, padding:28, width:"100%", maxWidth:560,
+            border:`1px solid ${T.br}`, boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+              <div style={{ fontSize:17, fontWeight:800, color:T.tx }}>📥 Importar Pacientes via CSV</div>
+              <button onClick={()=>{ setShowImport(false); setImportResult(null); }}
+                style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:T.txS }}>✕</button>
+            </div>
+
+            {/* Regras do CSV */}
+            <div style={{ background:T.sur2, border:`1px solid ${T.br}`, borderRadius:12,
+              padding:"14px 16px", marginBottom:16, fontSize:12, color:T.txM, lineHeight:1.8 }}>
+              <div style={{ fontWeight:800, color:T.tx, marginBottom:6 }}>📋 Regras do arquivo CSV</div>
+              <div>• Separador: <strong>ponto e vírgula (;)</strong> — encoding <strong>UTF-8 com BOM</strong></div>
+              <div>• 1ª linha: cabeçalho obrigatório (baixe o modelo abaixo)</div>
+              <div>• Coluna <strong>"Nome Completo"</strong> é obrigatória</div>
+              <div>• CPF: com ou sem pontuação — validado automaticamente</div>
+              <div>• Data de nascimento: formato <strong>AAAA-MM-DD</strong> (ex: 1985-04-22)</div>
+              <div>• Status: <strong>Ativo</strong> ou <strong>Inativo</strong></div>
+              <div>• Classe: <strong>A</strong>, <strong>B</strong> ou <strong>C</strong></div>
+              <div style={{ color:T.re, marginTop:4 }}>• Pacientes com CPF ou e-mail duplicado serão ignorados</div>
+            </div>
+
+            <button onClick={baixarModelo}
+              style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 16px",
+                background:`${T.b}12`, border:`1.5px solid ${T.b}40`, borderRadius:9,
+                color:T.b, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit",
+                marginBottom:16, width:"100%" }}>
+              📄 Baixar modelo CSV de exemplo
+            </button>
+
+            {!importResult ? (
+              <label style={{ display:"flex", flexDirection:"column", alignItems:"center",
+                justifyContent:"center", gap:10, border:`2px dashed ${T.br}`, borderRadius:12,
+                padding:"28px 20px", cursor:"pointer", background:T.sur2,
+                transition:"border-color .2s" }}
+                onDragOver={e=>e.preventDefault()}
+                onDrop={e=>{ e.preventDefault(); importarCSV(e.dataTransfer.files[0]); }}>
+                <input type="file" accept=".csv" style={{ display:"none" }}
+                  onChange={e=>importarCSV(e.target.files[0])} />
+                {importLoading
+                  ? <div style={{ color:T.b, fontWeight:700 }}>⏳ Processando...</div>
+                  : <>
+                      <div style={{ fontSize:32 }}>📂</div>
+                      <div style={{ fontSize:13, fontWeight:700, color:T.tx }}>Clique ou arraste o arquivo CSV</div>
+                      <div style={{ fontSize:11, color:T.txS }}>Somente arquivos .csv</div>
+                    </>
+                }
+              </label>
+            ) : (
+              <div>
+                <div style={{ background:importResult.ok>0?T.grB:T.reB, border:`1px solid ${importResult.ok>0?T.gr:T.re}40`,
+                  borderRadius:12, padding:"14px 16px", marginBottom:12 }}>
+                  <div style={{ fontSize:15, fontWeight:800, color:importResult.ok>0?T.gr:T.re, marginBottom:4 }}>
+                    {importResult.ok>0?`✅ ${importResult.ok} paciente(s) importado(s)`:"⚠️ Nenhum paciente importado"}
+                  </div>
+                  <div style={{ fontSize:12, color:T.txM }}>
+                    Total no arquivo: {importResult.total} linha(s) · Erros: {importResult.erros.length}
+                  </div>
+                </div>
+                {importResult.erros.length>0 && (
+                  <div style={{ background:T.reB, border:`1px solid ${T.re}30`, borderRadius:10,
+                    padding:"12px 14px", maxHeight:160, overflowY:"auto" }}>
+                    <div style={{ fontSize:11, fontWeight:800, color:T.re, marginBottom:6 }}>Erros encontrados:</div>
+                    {importResult.erros.map((e,i)=>(
+                      <div key={i} style={{ fontSize:11, color:T.re, marginBottom:2 }}>• {e}</div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={()=>{ setShowImport(false); setImportResult(null); }}
+                  style={{ marginTop:14, width:"100%", padding:"10px", background:`linear-gradient(135deg,${T.gr},#166e3f)`,
+                    color:"#fff", border:"none", borderRadius:9, fontWeight:700, fontSize:13,
+                    cursor:"pointer", fontFamily:"inherit" }}>
+                  Concluir
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Stats strip */}
       <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
@@ -4986,9 +5508,12 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
                   {["1","2","3","5","7","10","14","15","30"].map(d=><option key={d}>{d}</option>)}
                 </select>
               </Fld>
-              <Fld label="Motivo / CID *">
-                <input style={inp} value={atestForm.motivo} placeholder="Ex: Gastroenterite aguda (A09)"
-                  onChange={e=>setAtestForm(p=>({...p,motivo:e.target.value}))} />
+              <Fld label="Motivo / CID-10 *">
+                <CidInput
+                  style={inp}
+                  value={atestForm.motivo}
+                  onChange={txt=>setAtestForm(p=>({...p,motivo:txt}))}
+                />
               </Fld>
               <Fld label="Observações (opcional)">
                 <textarea style={{ ...inp, minHeight:80, resize:"vertical" }}
