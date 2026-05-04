@@ -3386,25 +3386,105 @@ function PopupPaciente({ pac, onClose, allExames, onSaveExame, onUpdateExame, se
       </div>
 
       {/* ── Tab: Informações */}
-      {tab==="info" && (
-        <div>
-          <InfoRow label="Data Nasc." value={pac.nasc} />
-          <InfoRow label="Sexo"       value={pac.sexo} />
-          <InfoRow label="CPF"        value={pac.cpf} />
-          <InfoRow label="Telefone"   value={pac.tel} />
-          <InfoRow label="WhatsApp"   value={pac.whatsapp} />
-          <InfoRow label="E-mail"     value={pac.email} />
-          <InfoRow label="Plano"      value={pac.plano} />
-          {pac.obs && (
-            <div style={{ marginTop:14, background:T.amB, border:`1px solid ${T.amBr}`,
-              borderRadius:10, padding:"12px 16px" }}>
-              <div style={{ fontSize:11, fontWeight:700, color:T.am, textTransform:"uppercase",
-                letterSpacing:".07em", marginBottom:6 }}>Observações clínicas</div>
-              <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{pac.obs}</div>
+      {tab==="info" && (() => {
+        const [editMode, setEditMode] = React.useState(false);
+        const [editForm, setEditForm] = React.useState({
+          nm: pac.nm||"", nasc: pac.nasc||"", sexo: pac.sexo||"", cpf: pac.cpf||"",
+          tel: pac.tel||"", whatsapp: pac.whatsapp||"", email: pac.email||"",
+          plano: pac.plano||"", st: pac.st||"Ativo", obs: pac.obs||""
+        });
+        const [saving, setSaving] = React.useState(false);
+        const [saved,  setSaved]  = React.useState(false);
+        function saveEdit() {
+          setSaving(true);
+          const updated = { ...pac, ...editForm };
+          if(setPats) setPats(prev => prev.map(p => p.id===updated.id ? updated : p));
+          const db = window._firebaseDB;
+          if(db && pac.id) {
+            db.ref("crm_data/crm_pats_v26/" + pac.id).update(editForm)
+              .then(()=>{ setSaving(false); setSaved(true); setEditMode(false); setTimeout(()=>setSaved(false),2500); })
+              .catch(()=>setSaving(false));
+          } else { setSaving(false); setEditMode(false); }
+        }
+        const inpS = { width:"100%", padding:"7px 10px", border:`1.5px solid ${T.br}`, borderRadius:8,
+          fontSize:13, fontFamily:"inherit", background:T.sur, color:T.tx, outline:"none",
+          boxSizing:"border-box" };
+        return (
+          <div>
+            <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:10, gap:8 }}>
+              {saved && <span style={{ fontSize:12, color:T.gr, fontWeight:600, alignSelf:"center" }}>✓ Salvo</span>}
+              {!editMode
+                ? <button onClick={()=>setEditMode(true)} style={{ display:"flex", alignItems:"center", gap:6,
+                    padding:"7px 16px", background:`linear-gradient(135deg,${T.b},#0a4a8a)`,
+                    color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:12,
+                    fontWeight:700, fontFamily:"inherit" }}>✏️ Editar</button>
+                : <>
+                    <button onClick={()=>setEditMode(false)} style={{ padding:"7px 12px", background:T.sur2,
+                      border:`1px solid ${T.br}`, borderRadius:8, cursor:"pointer", fontSize:12,
+                      color:T.txM, fontFamily:"inherit" }}>Cancelar</button>
+                    <button onClick={saveEdit} disabled={saving} style={{ padding:"7px 16px",
+                      background:`linear-gradient(135deg,${T.gr},#166e3f)`,
+                      color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:12,
+                      fontWeight:700, fontFamily:"inherit" }}>{saving?"Salvando...":"💾 Salvar"}</button>
+                  </>
+              }
             </div>
-          )}
-        </div>
-      )}
+            {editMode ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                {[["Nome","nm","text"],["Data Nasc.","nasc","date"],["CPF","cpf","text"],
+                  ["Telefone","tel","text"],["WhatsApp","whatsapp","text"],["E-mail","email","email"]
+                ].map(([label,field,type])=>(
+                  <div key={field} style={{ display:"flex", gap:10, alignItems:"center" }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                      letterSpacing:".07em", minWidth:90, flexShrink:0 }}>{label}</span>
+                    <input type={type} style={inpS} value={editForm[field]}
+                      onChange={e=>setEditForm(p=>({...p,[field]:e.target.value}))} />
+                  </div>
+                ))}
+                {[["Sexo","sexo",["","Masculino","Feminino","Outro"]],
+                  ["Status","st",["Ativo","Inativo"]]].map(([label,field,opts])=>(
+                  <div key={field} style={{ display:"flex", gap:10, alignItems:"center" }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                      letterSpacing:".07em", minWidth:90, flexShrink:0 }}>{label}</span>
+                    <select style={inpS} value={editForm[field]} onChange={e=>setEditForm(p=>({...p,[field]:e.target.value}))}>
+                      {opts.map(o=><option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                ))}
+                <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                    letterSpacing:".07em", minWidth:90, flexShrink:0, paddingTop:8 }}>Plano</span>
+                  <input style={inpS} value={editForm.plano} onChange={e=>setEditForm(p=>({...p,plano:e.target.value}))} />
+                </div>
+                <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                    letterSpacing:".07em", minWidth:90, flexShrink:0, paddingTop:8 }}>Obs.</span>
+                  <textarea style={{ ...inpS, minHeight:60, resize:"vertical" }}
+                    value={editForm.obs} onChange={e=>setEditForm(p=>({...p,obs:e.target.value}))} />
+                </div>
+              </div>
+            ) : (
+              <>
+                <InfoRow label="Data Nasc." value={pac.nasc} />
+                <InfoRow label="Sexo"       value={pac.sexo} />
+                <InfoRow label="CPF"        value={pac.cpf} />
+                <InfoRow label="Telefone"   value={pac.tel} />
+                <InfoRow label="WhatsApp"   value={pac.whatsapp} />
+                <InfoRow label="E-mail"     value={pac.email} />
+                <InfoRow label="Plano"      value={pac.plano} />
+                {pac.obs && (
+                  <div style={{ marginTop:14, background:T.amB, border:`1px solid ${T.amBr}`,
+                    borderRadius:10, padding:"12px 16px" }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:T.am, textTransform:"uppercase",
+                      letterSpacing:".07em", marginBottom:6 }}>Observações clínicas</div>
+                    <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{pac.obs}</div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Tab: Prontuário Médico */}
       {tab==="prontuario" && (
@@ -4156,11 +4236,18 @@ function ExameCard({ e, usuario, onDelete, onEdit }) {
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
             {stBadge(e.st)}
             {["admin","medico"].includes(role) && (
-              <button onClick={ev=>{ ev.stopPropagation(); if(window.confirm(`Excluir exame "${e.tipo}" de ${e.pac}?`)) onDelete(); }}
-                style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
-                  color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
-                  alignItems:"center", justifyContent:"center" }}
-                title="Excluir exame">✕</button>
+              <>
+                <button onClick={ev=>{ ev.stopPropagation(); setEditing(true); }}
+                  style={{ width:26, height:26, borderRadius:6, border:`1px solid ${T.b}40`, background:T.bL,
+                    color:T.b, cursor:"pointer", fontSize:12, display:"inline-flex",
+                    alignItems:"center", justifyContent:"center" }}
+                  title="Editar exame">✏️</button>
+                <button onClick={ev=>{ ev.stopPropagation(); if(window.confirm(`Excluir exame "${e.tipo}" de ${e.pac}?`)) onDelete(); }}
+                  style={{ width:26, height:26, borderRadius:6, border:"none", background:T.reB,
+                    color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
+                    alignItems:"center", justifyContent:"center" }}
+                  title="Excluir exame">✕</button>
+              </>
             )}
           </div>
         </div>
@@ -4417,10 +4504,16 @@ Equipe Dra. Ilza Ezequiel`
             </button>
           ))}
           {["admin","medico"].includes(role) && (
-            <button onClick={()=>{ if(window.confirm(`Excluir consulta de ${c.pac}?`)) onDelete(); }}
-              style={{ width:22, height:22, borderRadius:6, border:"none", background:T.reB,
-                color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
-                alignItems:"center", justifyContent:"center" }}>✕</button>
+            <>
+              <button onClick={()=>{ setDetalhe(true); }}
+                style={{ width:26, height:26, borderRadius:6, border:`1px solid ${T.b}40`, background:T.bL,
+                  color:T.b, cursor:"pointer", fontSize:12, display:"inline-flex",
+                  alignItems:"center", justifyContent:"center" }} title="Editar consulta">✏️</button>
+              <button onClick={()=>{ if(window.confirm(`Excluir consulta de ${c.pac}?`)) onDelete(); }}
+                style={{ width:26, height:26, borderRadius:6, border:"none", background:T.reB,
+                  color:T.re, cursor:"pointer", fontSize:12, display:"inline-flex",
+                  alignItems:"center", justifyContent:"center" }}>✕</button>
+            </>
           )}
         </div>
       </div>
@@ -4864,29 +4957,116 @@ function FichaPacientePage({ pac, onClose, allExames, onSaveExame, setPage, setP
       )}
 
       {/* ── Tab: Informações */}
-      {tab==="info" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
-          {[
-            ["Data Nasc.", pac.nasc], ["Sexo", pac.sexo], ["CPF", pac.cpf],
-            ["Telefone", pac.tel], ["WhatsApp", pac.whatsapp], ["E-mail", pac.email],
-            ["Plano", pac.plano], ["Status", pac.st],
-          ].filter(([,v])=>v).map(([label,value])=>(
-            <div key={label} style={{ display:"flex", gap:12, padding:"11px 0", borderBottom:`1px solid ${T.br}` }}>
-              <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
-                letterSpacing:".07em", minWidth:120, flexShrink:0 }}>{label}</span>
-              <span style={{ fontSize:13, color:T.tx, fontWeight:500 }}>{value}</span>
+      {tab==="info" && (() => {
+        const [editMode, setEditMode] = React.useState(false);
+        const [editForm, setEditForm] = React.useState({
+          nm: pac.nm||"", nasc: pac.nasc||"", sexo: pac.sexo||"", cpf: pac.cpf||"",
+          tel: pac.tel||"", whatsapp: pac.whatsapp||"", email: pac.email||"",
+          plano: pac.plano||"", st: pac.st||"Ativo", obs: pac.obs||""
+        });
+        const [saving, setSaving] = React.useState(false);
+        const [saved, setSaved] = React.useState(false);
+        function saveEdit() {
+          setSaving(true);
+          const updated = { ...pac, ...editForm };
+          if(onUpdatePac) onUpdatePac(updated);
+          // Firebase
+          const db = window._firebaseDB;
+          if(db && pac.id) {
+            const ref = db.ref("crm_data/crm_pats_v26/" + pac.id);
+            ref.update(editForm).then(()=>{
+              setSaving(false); setSaved(true); setEditMode(false);
+              setTimeout(()=>setSaved(false),2500);
+            }).catch(()=>setSaving(false));
+          } else { setSaving(false); setEditMode(false); }
+        }
+        const inpS = { width:"100%", padding:"8px 12px", border:`1.5px solid ${T.br}`, borderRadius:8,
+          fontSize:13, fontFamily:"inherit", background:T.sur, color:T.tx, outline:"none",
+          boxSizing:"border-box" };
+        return (
+          <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
+            <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14, gap:8 }}>
+              {saved && <span style={{ fontSize:12, color:T.gr, fontWeight:600, alignSelf:"center" }}>✓ Salvo</span>}
+              {!editMode
+                ? <button onClick={()=>setEditMode(true)} style={{ display:"flex", alignItems:"center", gap:6,
+                    padding:"8px 18px", background:`linear-gradient(135deg,${T.b},#0a4a8a)`,
+                    color:"#fff", border:"none", borderRadius:9, cursor:"pointer", fontSize:13,
+                    fontWeight:700, fontFamily:"inherit" }}>✏️ Editar Dados</button>
+                : <>
+                    <button onClick={()=>setEditMode(false)} style={{ padding:"8px 14px", background:T.sur2,
+                      border:`1px solid ${T.br}`, borderRadius:8, cursor:"pointer", fontSize:13,
+                      color:T.txM, fontFamily:"inherit" }}>Cancelar</button>
+                    <button onClick={saveEdit} disabled={saving} style={{ padding:"8px 18px",
+                      background:`linear-gradient(135deg,${T.gr},#166e3f)`,
+                      color:"#fff", border:"none", borderRadius:9, cursor:"pointer", fontSize:13,
+                      fontWeight:700, fontFamily:"inherit" }}>{saving?"Salvando...":"💾 Salvar"}</button>
+                  </>
+              }
             </div>
-          ))}
-          {pac.obs && (
-            <div style={{ marginTop:14, background:T.amB, border:`1px solid ${T.amBr}`,
-              borderRadius:10, padding:"12px 16px" }}>
-              <div style={{ fontSize:11, fontWeight:700, color:T.am, textTransform:"uppercase",
-                letterSpacing:".07em", marginBottom:6 }}>Observações clínicas</div>
-              <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{pac.obs}</div>
-            </div>
-          )}
-        </div>
-      )}
+            {editMode ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                {[["Nome completo","nm","text"],["Data de Nascimento","nasc","date"],["CPF","cpf","text"],
+                  ["Telefone","tel","text"],["WhatsApp","whatsapp","text"],["E-mail","email","email"],
+                ].map(([label,field,type])=>(
+                  <div key={field}>
+                    <div style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                      letterSpacing:".07em", marginBottom:4 }}>{label}</div>
+                    <input type={type} style={inpS} value={editForm[field]}
+                      onChange={e=>setEditForm(p=>({...p,[field]:e.target.value}))} />
+                  </div>
+                ))}
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                    letterSpacing:".07em", marginBottom:4 }}>Sexo</div>
+                  <select style={inpS} value={editForm.sexo} onChange={e=>setEditForm(p=>({...p,sexo:e.target.value}))}>
+                    <option value="">—</option>
+                    <option>Masculino</option><option>Feminino</option><option>Outro</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                    letterSpacing:".07em", marginBottom:4 }}>Plano</div>
+                  <input style={inpS} value={editForm.plano} onChange={e=>setEditForm(p=>({...p,plano:e.target.value}))} />
+                </div>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                    letterSpacing:".07em", marginBottom:4 }}>Status</div>
+                  <select style={inpS} value={editForm.st} onChange={e=>setEditForm(p=>({...p,st:e.target.value}))}>
+                    <option>Ativo</option><option>Inativo</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                    letterSpacing:".07em", marginBottom:4 }}>Observações clínicas</div>
+                  <textarea style={{ ...inpS, minHeight:80, resize:"vertical", lineHeight:1.6 }}
+                    value={editForm.obs} onChange={e=>setEditForm(p=>({...p,obs:e.target.value}))} />
+                </div>
+              </div>
+            ) : (
+              <div>
+                {[["Data Nasc.", pac.nasc], ["Sexo", pac.sexo], ["CPF", pac.cpf],
+                  ["Telefone", pac.tel], ["WhatsApp", pac.whatsapp], ["E-mail", pac.email],
+                  ["Plano", pac.plano], ["Status", pac.st],
+                ].filter(([,v])=>v).map(([label,value])=>(
+                  <div key={label} style={{ display:"flex", gap:12, padding:"11px 0", borderBottom:`1px solid ${T.br}` }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:T.txS, textTransform:"uppercase",
+                      letterSpacing:".07em", minWidth:120, flexShrink:0 }}>{label}</span>
+                    <span style={{ fontSize:13, color:T.tx, fontWeight:500 }}>{value}</span>
+                  </div>
+                ))}
+                {pac.obs && (
+                  <div style={{ marginTop:14, background:T.amB, border:`1px solid ${T.amBr}`,
+                    borderRadius:10, padding:"12px 16px" }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:T.am, textTransform:"uppercase",
+                      letterSpacing:".07em", marginBottom:6 }}>Observações clínicas</div>
+                    <div style={{ fontSize:13, color:T.tx, lineHeight:1.6 }}>{pac.obs}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
