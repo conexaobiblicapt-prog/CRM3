@@ -139,6 +139,10 @@ function GlobalStyles() {
         to   { opacity: 1; transform: translateY(0); }
       }
       .page { animation: fadeUp .26s ease forwards; }
+      @keyframes pulseGreen {
+        0%,100% { box-shadow: 0 0 4px #25d366; opacity:1; }
+        50%      { box-shadow: 0 0 10px #25d366, 0 0 20px #25d36633; opacity:.8; }
+      }
       @keyframes popIn {
         from { opacity: 0; transform: scale(.96) translateY(10px); }
         to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -482,7 +486,7 @@ async function hashSenha(senha) {
 // ViniCRM2026     → pré-calculado
 const USERS_INIT = [
   { id:1, u:"admin",             s:"5028aed3aa7c7bc6439da8d7cca6edb7c40a7e98c22abc1682213005e2bb8e3e", nome:"Administrador",      role:"admin",    email:"marcatti_vp@hotmail.com"  },
-  { id:2, u:"ilza",             s:"23ea8803af65e8414c31d05a7247d0c5ce837a5a812bebf318a056eddaeb2a01", nome:"Dra. Ilza Ezequiel", role:"medico",   email:"ilzaeneta@gmail.com"      },
+  { id:2, u:"ilza",             s:"23ea8803af65e8414c31d05a7247d0c5ce837a5a812bebf318a056eddaeb2a01", nome:"Dra. Ilza Ezequiel", role:"medico",   email:"conexaobiblica.pt@gmail.com"      },
   { id:3, u:"recepcao",         s:"650c3bcbe89f71c4a68dc6138edad53f48d73117d06775cf497f1b52d5be6386", nome:"Recepção",           role:"recepcao", email:"recepcao@drailza.com.br"  },
   { id:4, u:"Vinícius",         s:"afcdd2f7854b9e283b86e599ac1f021884900f77fe27cbd19c449f3f06e3ed19", nome:"Vinícius",           role:"admin",    email:"marcatti_vp@hotmail.com"  },
   { id:5, u:"admin@drailza.com.br", s:"0b26ee69492137b82cd4f36a256d85b759c8fc6fe08c50e1fb3ee22bc0fd0dc5", nome:"Dra. Ilza Ezequiel", role:"admin",    email:"admin@drailza.com.br"     },
@@ -2605,7 +2609,7 @@ function NotaFiscalModal({paciente,total,pagamentos,procs,onClose,onEmitida}){
       <div class="field"><label>Endereço</label><span>Av. Senador Feijó, 821 — Santos-SP</span></div>
       <div class="field"><label>Município Prestação</label><span>Santos — SP · IBGE 3548500</span></div>
       <div class="field"><label>Telefone</label><span>(13) 97802-8137</span></div>
-      <div class="field"><label>E-mail</label><span>ilzaeneta@gmail.com</span></div>
+      <div class="field"><label>E-mail</label><span>conexaobiblica.pt@gmail.com</span></div>
     </div>
   </div>
 
@@ -2913,6 +2917,18 @@ Clínica Dra. Ilza Ezequiel · (13) XXXX-XXXX · www.drailzaezequiel.com.br
 `);
     }
     onSalvar(novo);
+
+    // ── E-mail de confirmação de cadastro (automático) ──────────────────────
+    if(form.email){
+      EJS.confirmarCadastro({
+        nm:          novo.nm,
+        email_pac:   novo.email,
+        cpf:         novo.cpf,
+        tel:         novo.tel||novo.cel||novo.whatsapp,
+        plano:       novo.plano,
+        dt_cadastro: new Date().toLocaleDateString("pt-BR"),
+      });
+    }
   }
 
   /* ─── helpers visuais ─── */
@@ -3234,20 +3250,48 @@ async function salaSetState(roomId, data) {
 async function salaGetState(roomId) {
   return await fbRead(`crm_data/sv_room_${roomId}_state`);
 }
-const EMAIL_DRA = "ilzaeneta@gmail.com";
+const EMAIL_DRA    = "conexaobiblica.pt@gmail.com";
+const EMAIL_NOREPLY = "noreply@drailzaezequiel.com.br"; // remetente oficial clínica
 
-// ════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
 // EMAILJS — envio automático sem backend
 // Configure em: https://www.emailjs.com/
-// ════════════════════════════════════════════════════════
+//
+// TEMPLATES NECESSÁRIOS NO PAINEL EMAILJS:
+//  template_cadastro  → boas-vindas + info sala virtual
+//  template_consulta  → confirmação de consulta / agendamento
+//  template_exame     → confirmação de exame
+//  template_tele      → confirmação de teleconsulta
+//  template_cancel    → cancelamento
+//
+// Variáveis comuns disponíveis em TODOS os templates:
+//  {{to_email}}       → destinatário principal (paciente)
+//  {{to_email_cc}}    → cópia (conexaobiblica.pt@gmail.com)
+//  {{from_email}}     → remetente (noreply@drailzaezequiel.com.br)
+//  {{paciente}}       → nome do paciente
+//  {{clinica}}        → "Clínica Dra. Ilza Ezequiel – Gastroenterologia"
+//  {{quartas_msg}}    → aviso sobre sala virtual às quartas-feiras
+//  {{login_portal}}   → e-mail do paciente
+//  {{senha_portal}}   → CPF (somente números)
+//  {{link_portal}}    → URL da Sala Virtual
+// ══════════════════════════════════════════════════════════════════
+const LINK_PORTAL_PACIENTE = "https://drailzaezequiel.com.br/sala-virtual"; // ← URL real da Sala Virtual
+
 const EJS = {
-  SERVICE_ID:  "service_drailza",   // ← substitua após criar conta
-  PUBLIC_KEY:  "YOUR_PUBLIC_KEY",   // ← substitua após criar conta
+  SERVICE_ID:  "service_drailza",
+  PUBLIC_KEY:  "3NdkjfPlF2oArYCIo",  // ✅ chave real
   TEMPLATES: {
-    consulta:      "template_consulta",
-    exame:         "template_exame",
-    teleconsulta:  "template_tele",
-    cancelamento:  "template_cancel",
+    cadastro:     "template_cadastro",  // ✅ ativo
+    consulta:     "template_consulta",  // ✅ ativo
+    // ── Descomente abaixo ao fazer upgrade do plano EmailJS ──────────
+    // exame:        "template_exame",
+    // teleconsulta: "template_tele",
+    // cancelamento: "template_cancel",
+    // ─────────────────────────────────────────────────────────────────
+    // Fallbacks temporários (usam template_consulta enquanto plano free)
+    exame:        "template_consulta",
+    teleconsulta: "template_consulta",
+    cancelamento: "template_consulta",
   },
   _loaded: false,
 
@@ -3271,8 +3315,15 @@ const EJS = {
     try {
       const ok = await this.init();
       if(!ok || !window.emailjs) throw new Error("EmailJS não carregou");
-      await window.emailjs.send(this.SERVICE_ID, templateId, params);
-      console.log("[Email] ✅ Enviado:", templateId);
+      // Injeta remetente padrão em todos os envios
+      const payload = {
+        from_email: EMAIL_NOREPLY,
+        clinica:    "Clínica Dra. Ilza Ezequiel – Gastroenterologia",
+        link_portal: LINK_PORTAL_PACIENTE,
+        ...params,
+      };
+      await window.emailjs.send(this.SERVICE_ID, templateId, payload);
+      console.log("[Email] ✅ Enviado:", templateId, "→", params.to_email);
       return true;
     } catch(e) {
       console.warn("[Email] ❌ Falha:", e.message);
@@ -3280,48 +3331,101 @@ const EJS = {
     }
   },
 
-  // ── Consulta agendada ─────────────────────────────────
-  async confirmarConsulta({ pac, email_pac, dt, hr, tipo, proc, obs, link }) {
+  // ── Texto padrão "Quartas na Sala Virtual" (adicionado a cadastros e agendamentos) ──
+  _msgQuartas(emailPac, cpfPac) {
+    const loginPortal = emailPac || "—";
+    const senhaPortal = (cpfPac||"").replace(/\D/g,"") || "seu CPF (somente números)";
+    return (
+      "🖥️ SALA VIRTUAL — QUARTAS-FEIRAS\n" +
+      "Toda quarta-feira a Dra. Ilza Ezequiel atende seus pacientes em uma sala virtual exclusiva.\n" +
+      "Acesse: " + LINK_PORTAL_PACIENTE + "\n" +
+      "Login: " + loginPortal + "\n" +
+      "Senha: " + senhaPortal + " (CPF somente dígitos, cadastrado pela clínica)"
+    );
+  },
+
+  // ── Cadastro de paciente — boas-vindas + acesso portal ────────────────────────
+  async confirmarCadastro({ nm, email_pac, cpf, tel, plano, dt_cadastro }) {
+    if(!email_pac) return false; // sem e-mail, nada a enviar
+    const cpfNum = (cpf||"").replace(/\D/g,"");
+    return this.send(this.TEMPLATES.cadastro, {
+      to_email:      email_pac,
+      to_email_cc:   EMAIL_DRA,
+      paciente:      nm,
+      telefone:      tel || "—",
+      plano:         plano || "Particular",
+      data_cadastro: dt_cadastro || new Date().toLocaleDateString("pt-BR"),
+      login_portal:  email_pac,
+      senha_portal:  cpfNum || "seu CPF (somente números)",
+      link_portal:   LINK_PORTAL_PACIENTE,
+      quartas_msg:   this._msgQuartas(email_pac, cpf),
+    });
+  },
+
+  // ── Consulta agendada ─────────────────────────────────────────────────────────
+  async confirmarConsulta({ pac, email_pac, cpf_pac, dt, hr, tipo, proc, obs, link }) {
     const dtFmt = (dt||"").split("-").reverse().join("/");
     return this.send(this.TEMPLATES.consulta, {
-      to_email:    EMAIL_DRA,
-      to_email_cc: email_pac || "",
-      paciente:    pac,
-      data:        dtFmt,
-      horario:     hr,
-      modalidade:  tipo,
+      to_email:     email_pac || EMAIL_DRA,
+      to_email_cc:  EMAIL_DRA,
+      paciente:     pac,
+      data:         dtFmt,
+      horario:      hr,
+      modalidade:   tipo,
       procedimento: proc,
-      observacoes: obs || "—",
-      link_tele:   link || "—",
-      clinica:     "CRM Dra. Ilza Ezequiel",
-      reply_to:    EMAIL_DRA,
+      observacoes:  obs || "—",
+      link_tele:    link || "—",
+      login_portal: email_pac || "—",
+      senha_portal: (cpf_pac||"").replace(/\D/g,"") || "seu CPF (somente números)",
+      quartas_msg:  this._msgQuartas(email_pac, cpf_pac),
     });
   },
 
-  // ── Exame solicitado ──────────────────────────────────
-  async confirmarExame({ pac, tipo, dt, st }) {
+  // ── Exame agendado ────────────────────────────────────────────────────────────
+  // Usa template_exame quando disponível; fallback para template_consulta (plano free)
+  async confirmarExame({ pac, email_pac, cpf_pac, tipo, dt, st }) {
     const dtFmt = (dt||"").split("-").reverse().join("/");
     return this.send(this.TEMPLATES.exame, {
-      to_email:    EMAIL_DRA,
-      paciente:    pac,
-      exame:       tipo,
-      data:        dtFmt || "A definir",
-      status:      st || "Agendado",
-      clinica:     "CRM Dra. Ilza Ezequiel",
+      to_email:     email_pac || EMAIL_DRA,
+      to_email_cc:  EMAIL_DRA,
+      paciente:     pac,
+      // campos nativos do template_exame
+      exame:        tipo,
+      status:       st || "Agendado",
+      // campos de compatibilidade com template_consulta (fallback)
+      modalidade:   "Exame",
+      procedimento: tipo,
+      observacoes:  `Status: ${st || "Agendado"}`,
+      horario:      "—",
+      link_tele:    "—",
+      data:         dtFmt || "A definir",
+      login_portal: email_pac || "—",
+      senha_portal: (cpf_pac||"").replace(/\D/g,"") || "seu CPF (somente números)",
+      quartas_msg:  this._msgQuartas(email_pac, cpf_pac),
     });
   },
 
-  // ── Teleconsulta agendada ─────────────────────────────
-  async confirmarTeleconsulta({ pac, dt, hr, motivo, link }) {
+  // ── Teleconsulta agendada ─────────────────────────────────────────────────────
+  // Usa template_tele quando disponível; fallback para template_consulta (plano free)
+  async confirmarTeleconsulta({ pac, email_pac, cpf_pac, dt, hr, motivo, link }) {
     const dtFmt = (dt||"").split("-").reverse().join("/");
     return this.send(this.TEMPLATES.teleconsulta, {
-      to_email:   EMAIL_DRA,
-      paciente:   pac,
-      data:       dtFmt,
-      horario:    hr,
-      motivo:     motivo,
-      link_sala:  link,
-      clinica:    "CRM Dra. Ilza Ezequiel",
+      to_email:     email_pac || EMAIL_DRA,
+      to_email_cc:  EMAIL_DRA,
+      paciente:     pac,
+      // campos nativos do template_tele
+      link_sala:    link,
+      motivo:       motivo,
+      // campos de compatibilidade com template_consulta (fallback)
+      modalidade:   "Teleconsulta",
+      procedimento: motivo,
+      observacoes:  `Link da sala: ${link}`,
+      link_tele:    link,
+      data:         dtFmt,
+      horario:      hr,
+      login_portal: email_pac || "—",
+      senha_portal: (cpf_pac||"").replace(/\D/g,"") || "seu CPF (somente números)",
+      quartas_msg:  this._msgQuartas(email_pac, cpf_pac),
     });
   },
 };
@@ -4142,7 +4246,18 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
         <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={()=>{
           if(!pac.trim()||selList.length===0){alert("Preencha paciente e selecione ao menos um exame");return;}
-          selList.forEach(tipo=>onSave({id:"e"+Date.now()+Math.random(),pac,tipo,dt,obs,st:"Agendado"}));
+          selList.forEach(tipo=>{
+            onSave({id:"e"+Date.now()+Math.random(),pac,tipo,dt,obs,st:"Agendado"});
+            // ── E-mail automático ao paciente + cópia para a clínica ────────
+            EJS.confirmarExame({
+              pac,
+              email_pac: pacObj?.email || pacObj?.email_pac || "",
+              cpf_pac:   pacObj?.cpf   || "",
+              tipo,
+              dt,
+              st: "Agendado",
+            });
+          });
           onClose();
         }} icon="exam">Solicitar{selList.length>0?` (${selList.length})`:""}</Btn>
       </div>
@@ -4154,7 +4269,7 @@ function PopupNovoExame({ onClose, onSave, pacInicial="" }) {
 
 // ─── Sub-componentes de linha/card (hooks devem estar fora de .map()) ────────
 
-function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
+function PatRow({ p, i, total, usuario, abcColor, isOnline, onOpen, onDelete }) {
   const [tip, setTip] = useState(false);
   const [pos, setPos] = useState({ x:0, y:0 });
   const role = usuario?.role ?? window._crmUsuario?.role;
@@ -4168,8 +4283,20 @@ function PatRow({ p, i, total, usuario, abcColor, onOpen, onDelete }) {
       onMouseEnter={e=>{ e.currentTarget.style.background=T.sur2; e.currentTarget.style.borderLeftColor=T.b; setTip(true); const r=e.currentTarget.getBoundingClientRect(); setPos({x:r.left,y:r.top}); }}
       onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.borderLeftColor="transparent"; setTip(false); }}>
       <div>
-        <div style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}</div>
-        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>Último acesso: {p.ults}</div>
+        <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+          {isOnline && (
+            <div title="Online no portal agora" style={{ width:8, height:8, borderRadius:"50%",
+              background:"#25d366", boxShadow:"0 0 6px #25d366", flexShrink:0,
+              animation:"pulseGreen 1.5s infinite" }} />
+          )}
+          <span style={{ fontSize:13, fontWeight:600, color:T.tx }}>{p.nm}</span>
+          {isOnline && <span style={{ fontSize:10, fontWeight:700, color:"#25d366",
+            background:"#0e3d1f", border:"1px solid #1A7A52", borderRadius:99,
+            padding:"1px 7px", letterSpacing:".04em" }}>● Online</span>}
+        </div>
+        <div style={{ fontSize:11, color:T.txS, marginTop:1 }}>
+          {isOnline ? "🟢 No portal agora" : `Último acesso: ${p.ults||"—"}`}
+        </div>
       </div>
       <span style={{ fontSize:12, color:T.txM }}>{p.nasc}</span>
       <span style={{ fontSize:12, color:T.txM }}>{p.tel}</span>
@@ -4830,10 +4957,16 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
   const [showImport, setShowImport]   = useState(false);
   const [importResult, setImportResult] = useState(null); // {ok,erros,total}
   const [importLoading, setImportLoading] = useState(false);
-  const filtered = pats.filter(p =>
-    p.nm.toLowerCase().includes(q.toLowerCase()) ||
-    p.tel.includes(q) || p.plano.toLowerCase().includes(q.toLowerCase())
-  );
+  const presMap = usePresence(); // mapa de quem está online no portal
+  const onlineCount = pats.filter(p =>
+    presMap[p.id] || presMap[(p.email||"").toLowerCase().replace(/\./g,",").replace(/@/g,"_at_")]
+  ).length;
+  const filtered = q === "__online__"
+    ? pats.filter(p => presMap[p.id] || presMap[(p.email||"").toLowerCase().replace(/\./g,",").replace(/@/g,"_at_")])
+    : pats.filter(p =>
+        p.nm.toLowerCase().includes(q.toLowerCase()) ||
+        p.tel.includes(q) || p.plano.toLowerCase().includes(q.toLowerCase())
+      );
   const abcColor = { A:T.gr, B:T.b, C:T.txM };
 
   // ── CSV Export ────────────────────────────────────────────
@@ -5109,6 +5242,19 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
             <span style={{ fontSize:12, color:T.txM }}>{s.label}</span>
           </div>
         ))}
+        {/* Online agora */}
+        {onlineCount > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:7, background:"#0e3d1f",
+            border:"1.5px solid #1A7A52", borderRadius:10, padding:"7px 14px", cursor:"pointer",
+            boxShadow:"0 0 12px rgba(26,122,82,.3)", animation:"pulseGreen 2s infinite" }}
+            title="Pacientes com portal aberto agora"
+            onClick={()=>setQ("__online__")}>
+            <div style={{ width:9, height:9, borderRadius:"50%", background:"#25d366",
+              boxShadow:"0 0 8px #25d366", animation:"pulseGreen 1.5s infinite" }}/>
+            <span style={{ fontSize:13, fontWeight:800, color:"#25d366" }}>{onlineCount}</span>
+            <span style={{ fontSize:11, color:"#7ecfa0", fontWeight:600 }}>Online agora</span>
+          </div>
+        )}
         <div style={{ marginLeft:"auto", fontSize:12, color:T.txS }}>
           {filtered.length} resultado{filtered.length!==1?"s":""}
         </div>
@@ -5132,6 +5278,7 @@ function PagePacientes({ usuario, estoqueState, pats, setPats, allExames, setAll
         {filtered.map((p,i) => (
           <PatRow key={p.id} p={p} i={i} total={filtered.length}
             usuario={usuario} abcColor={abcColor}
+            isOnline={!!(presMap[p.id] || presMap[(p.email||"").toLowerCase().replace(/\./g,",").replace(/@/g,"_at_")])}
             onOpen={()=>{ setSelPac(p); auditAdd(window._crmUsuario?.nome||"sistema","FICHA_ABERTA",`Paciente: ${p.nm}`); }}
             onDelete={()=>setPats(prev=>prev.filter(x=>x.id!==p.id))} />
         ))}
@@ -6433,6 +6580,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
   const [pacientes, setPacientes] = useState([]);
   const [pacQ, setPacQ] = useState("");
   const [pacOpen, setPacOpen] = useState(false);
+  const [pacObj, setPacObj] = useState(null); // objeto completo do paciente selecionado
   const pacRef = useRef();
   useEffect(()=>{
     fbRead("crm_data/crm_pats_v26").then(v=>{ if(v&&Array.isArray(v)&&v.length>0) setPacientes(v); });
@@ -6458,7 +6606,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
                 onChange={e=>{setPacQ(e.target.value);f("pac","");setPacOpen(true);}}
                 onFocus={()=>setPacOpen(true)} />
               {form.pac&&<div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:20,height:20,borderRadius:"50%",background:T.b,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}
-                onClick={()=>{f("pac","");setPacQ("");setPacOpen(false);}}>
+                onClick={()=>{f("pac","");setPacQ("");setPacObj(null);setPacOpen(false);}}>
                 <Ic n="close" sz={10} c="#fff" sw={2.5}/></div>}
               {pacOpen&&pacQ.length>0&&(
                 <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:9999,background:T.sur,border:`1.5px solid ${T.b}55`,borderRadius:14,boxShadow:"0 12px 32px rgba(13,31,58,.16)",overflow:"hidden",maxHeight:240,overflowY:"auto"}}>
@@ -6466,7 +6614,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
                     const nome=pacNm(p);
                     const ini=nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase();
                     const sub=[p.plano,p.tel||p.whatsapp].filter(Boolean).join(" · ");
-                    return(<div key={p.id||nome} onClick={()=>{f("pac",nome);setPacQ(nome);setPacOpen(false);}}
+                    return(<div key={p.id||nome} onClick={()=>{f("pac",nome);setPacQ(nome);setPacObj(p);setPacOpen(false);}}
                       style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.br}`}}
                       onMouseEnter={e=>e.currentTarget.style.background=T.bL}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -6483,7 +6631,7 @@ function PopupNovaConsulta({ onClose, onSave }) {
                     </div>
                   )}
                   {pacQ.trim()&&!pacFiltrados.find(p=>pacNm(p)===pacQ.trim())&&(
-                    <div onClick={()=>{f("pac",pacQ.trim());setPacOpen(false);}}
+                    <div onClick={()=>{f("pac",pacQ.trim());setPacObj(null);setPacOpen(false);}}
                       style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",cursor:"pointer",background:T.bL,borderTop:`1px solid ${T.br}`}}>
                       <Ic n="plus" sz={12} c={T.b}/>
                       <div><div style={{fontSize:12,fontWeight:700,color:T.b}}>Usar "{pacQ.trim()}"</div>
@@ -6544,11 +6692,21 @@ function PopupNovaConsulta({ onClose, onSave }) {
           if(!form.pac.trim()||!form.dt||!form.hr){alert("Preencha paciente, data e horário");return;}
           const nova = {...form, id:"c"+Date.now(), mod: form.tipo};
           onSave(nova);
-          // Email automático via EmailJS
+          // ── E-mail automático ao paciente + cópia para a clínica ──────────
           const link_c = nova.tipo==="Teleconsulta"
             ? `${VIDEO_ROOM_BASE}/videoconsulta-sala.html?role=patient&room=DrIlzaEzequiel-${nova.pac.replace(/\s+/g,"-").toLowerCase()}-${nova.dt}&name=${encodeURIComponent(nova.pac)}`
             : "";
-          EJS.confirmarConsulta({...nova, link:link_c});
+          EJS.confirmarConsulta({
+            pac:       nova.pac,
+            email_pac: pacObj?.email || pacObj?.email_pac || "",
+            cpf_pac:   pacObj?.cpf  || "",
+            dt:        nova.dt,
+            hr:        nova.hr,
+            tipo:      nova.tipo,
+            proc:      nova.proc,
+            obs:       nova.obs,
+            link:      link_c,
+          });
           onClose();
         }} icon="cal">Confirmar agendamento</Btn>
       </div>
@@ -10175,7 +10333,12 @@ const HORARIOS = [
 const OCUPADOS = ["09:00","14:00","15:30"];
 
 function Agendamento() {
-  const [nome, setNome] = useState("");
+  const [pacSelecionado, setPacSelecionado] = useState(null); // objeto paciente completo
+  const [pacQ, setPacQ] = useState("");
+  const [pacOpen, setPacOpen] = useState(false);
+  const [pacientes, setPacientes] = useState([]);
+  const pacRef = useRef();
+
   const [motivo, setMotivo] = useState("Retorno");
   const [data, setData] = useState("");
   const [duracao, setDuracao] = useState("30");
@@ -10183,54 +10346,105 @@ function Agendamento() {
   const [canal, setCanal] = useState("whatsapp");
   const [confirmado, setConfirmado] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [enviandoMsg, setEnviandoMsg] = useState(false);
+  const [msgEnviada, setMsgEnviada] = useState(null); // "whatsapp"|"email"|"ambos"
 
-  const slug = nome.trim().replace(/\s+/g,"-").toLowerCase().replace(/[^a-z0-9-]/g,"") || "paciente";
-  const linkSala = `${VIDEO_ROOM_BASE}/videoconsulta-sala.html?role=patient&room=DrIlzaEzequiel-${slug}-${data||"consulta"}&name=${encodeURIComponent(nome)}`;
-  const telefone = "5513"; // prefixo - numero completo deve vir do cadastro
-  const mensagemWA = "Ola! Sua teleconsulta com a Dra. Ilza Ezequiel esta confirmada.\n\n"
-    + "Data: " + (data||"a definir") + "\nHorario: " + (horario||"a definir")
-    + "\n\nAcesse pelo link:\n" + linkSala
-    + "\n\nDuvidas? Responda esta mensagem.";
+  // Carrega pacientes do Firebase
+  useEffect(() => {
+    const fbUrl = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+    fetch(`${fbUrl}/crm_data/crm_pats_v26.json`)
+      .then(r => r.json())
+      .then(v => { if (v && Array.isArray(v) && v.length > 0) setPacientes(v); })
+      .catch(() => {});
+  }, []);
 
+  // Fecha dropdown ao clicar fora
+  useEffect(() => {
+    function h(e) { if (pacRef.current && !pacRef.current.contains(e.target)) setPacOpen(false); }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const nome = pacSelecionado ? (pacSelecionado.nm || pacSelecionado.nome || pacSelecionado.name || "") : pacQ.trim();
+  const pacFiltrados = pacientes.filter(p => pacNm(p).toLowerCase().includes(pacQ.toLowerCase())).slice(0, 8);
+
+  const slug = nome.replace(/\s+/g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "") || "paciente";
+  const linkSala = `${VIDEO_ROOM_BASE}/videoconsulta-sala.html?role=patient&room=DrIlzaEzequiel-${slug}-${data || "consulta"}&name=${encodeURIComponent(nome)}`;
+
+  const telPaciente = pacSelecionado ? (pacSelecionado.tel || pacSelecionado.whatsapp || pacSelecionado.telefone || "").replace(/\D/g, "") : "";
+  const emailPaciente = pacSelecionado ? (pacSelecionado.email || "") : "";
+
+  const mensagemWA = "Olá" + (nome ? `, ${nome.split(" ")[0]}` : "") + "! 😊\n\n"
+    + "Sua teleconsulta com a *Dra. Ilza Ezequiel* está confirmada.\n\n"
+    + "📅 Data: *" + (data || "a definir") + "*\n"
+    + "🕐 Horário: *" + (horario || "a definir") + "*\n"
+    + "⏱ Duração: " + duracao + " minutos\n"
+    + "📋 Motivo: " + motivo + "\n\n"
+    + "🔗 Acesse pelo link:\n" + linkSala
+    + "\n\nDúvidas? Responda esta mensagem. 💬";
+
+  // ── Enviar WhatsApp (abre direto para o número do paciente ou genérico) ──
   const enviarWhatsApp = () => {
     const msg = encodeURIComponent(mensagemWA);
-    window.open("https://api.whatsapp.com/send?text=" + msg, "_blank");
+    if (telPaciente) {
+      window.open(`https://wa.me/55${telPaciente}?text=${msg}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${msg}`, "_blank");
+    }
+  };
+
+  // ── Enviar Email via EJS (EmailJS) ──
+  const enviarEmail = () => {
+    if (!emailPaciente) {
+      alert("Paciente não possui e-mail cadastrado.");
+      return;
+    }
+    EJS.confirmarTeleconsulta({ pac: nome, email_pac: emailPaciente, cpf_pac: pacSelecionado?.cpf||"", dt: data, hr: horario, motivo, link: linkSala });
+    setMsgEnviada("email");
+  };
+
+  // ── Ação do botão "Enviar link" conforme canal selecionado ──
+  const handleEnviarLink = () => {
+    if (!nome || !horario) { alert("Selecione o paciente e o horário."); return; }
+    setEnviandoMsg(true);
+    setTimeout(() => {
+      if (canal === "whatsapp") { enviarWhatsApp(); setMsgEnviada("whatsapp"); }
+      else if (canal === "email") { enviarEmail(); setMsgEnviada("email"); }
+      else { enviarWhatsApp(); enviarEmail(); setMsgEnviada("ambos"); }
+      setEnviandoMsg(false);
+    }, 300);
   };
 
   const confirmar = () => {
-    if (!nome || !horario) { alert("Preencha o nome e selecione o horario."); return; }
+    if (!nome || !horario) { alert("Selecione o paciente e o horário."); return; }
     setEnviando(true);
     setTimeout(() => {
-      // Salva em consultas (crm_consultas_v26) para aparecer na lista
       try {
         const nova = {
-          id: "c"+Date.now(), pac: nome, dt: data, hr: horario,
+          id: "c" + Date.now(), pac: nome, dt: data, hr: horario,
           tipo: "Teleconsulta", mod: "Teleconsulta",
           proc: motivo, st: "Confirmado",
-          obs: "Link: " + linkSala
+          obs: "Link: " + linkSala,
+          pacId: pacSelecionado?.id || null,
         };
-        // Salva no Firebase (sincroniza desktop + mobile)
         const fbUrl = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
         fetch(`${fbUrl}/crm_data/crm_consultas_v26.json`)
           .then(r => r.json())
           .then(prev => {
             const lista = Array.isArray(prev) ? prev : [];
-            const atualizada = [...lista, nova].sort((a,b)=>a.dt>b.dt?1:-1);
+            const atualizada = [...lista, nova].sort((a, b) => a.dt > b.dt ? 1 : -1);
             fetch(`${fbUrl}/crm_data/crm_consultas_v26.json`, {
-              method:"PUT", headers:{"Content-Type":"application/json"},
+              method: "PUT", headers: { "Content-Type": "application/json" },
               body: JSON.stringify(atualizada)
             });
-            // Firebase salvo acima — sem localStorage
           })
-          .catch(() => {
-            // Firebase offline: aguarda reconexão automática via useFirebaseData
-          });
-        // Dispara evento para sincronizar state em tempo real na mesma aba
-        window.dispatchEvent(new CustomEvent("crm_consulta_nova", {detail: nova}));
-      } catch(e) { console.warn("Erro ao salvar teleconsulta:", e); }
+          .catch(() => {});
+        window.dispatchEvent(new CustomEvent("crm_consulta_nova", { detail: nova }));
+      } catch (e) { console.warn("Erro ao salvar teleconsulta:", e); }
 
-      // Email automático de teleconsulta via EmailJS
-      EJS.confirmarTeleconsulta({ pac:nome, dt:data, hr:horario, motivo, link:linkSala });
+      // Envia notificação conforme canal
+      if (canal === "whatsapp" || canal === "ambos") enviarWhatsApp();
+      if (canal === "email" || canal === "ambos") EJS.confirmarTeleconsulta({ pac: nome, email_pac: emailPaciente, cpf_pac: pacSelecionado?.cpf||"", dt: data, hr: horario, motivo, link: linkSala });
 
       setEnviando(false);
       setConfirmado(true);
@@ -10243,10 +10457,10 @@ function Agendamento() {
       <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 6 }}>Teleconsulta agendada!</div>
       <div style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>{nome} · {data} às {horario}</div>
       <div style={{ background: "#f5f0e8", borderRadius: 10, padding: "12px 16px", textAlign: "left", fontSize: 12, marginBottom: 16 }}>
-        <div style={{ fontWeight: 500, marginBottom: 4 }}>Link enviado via {canal === "whatsapp" ? "WhatsApp" : "e-mail"}:</div>
+        <div style={{ fontWeight: 500, marginBottom: 4 }}>Link da sala:</div>
         <div style={{ fontFamily: "monospace", color: "#8a6a32", wordBreak: "break-all" }}>{linkSala}</div>
       </div>
-      <TeleBtn onClick={() => { setConfirmado(false); setNome(""); setHorario(null); setData(""); }}>
+      <TeleBtn onClick={() => { setConfirmado(false); setPacSelecionado(null); setPacQ(""); setHorario(null); setData(""); setMsgEnviada(null); }}>
         Novo agendamento
       </TeleBtn>
     </div>
@@ -10255,25 +10469,101 @@ function Agendamento() {
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-        <TeleField label="Paciente" value={nome} onChange={setNome} placeholder="Nome completo..." />
+
+        {/* ── Busca de paciente com dropdown (mesmo padrão de Exames/Consultas) ── */}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ fontSize: 12, color: "#888", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Paciente</div>
+          <div ref={pacRef} style={{ position: "relative" }}>
+            <div style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+              <Ic n="search" sz={14} c={pacSelecionado ? T.b : T.txS} />
+            </div>
+            <input
+              style={{
+                width: "100%", padding: "10px 36px", border: `${pacSelecionado ? "1.5px" : "1px"} solid ${pacSelecionado ? T.b : T.br}`,
+                borderRadius: 10, fontSize: 13, fontFamily: "inherit",
+                background: pacSelecionado ? T.bL : T.sur, fontWeight: pacSelecionado ? 600 : 400, color: T.tx,
+              }}
+              value={pacQ}
+              placeholder="Buscar paciente cadastrado..."
+              onChange={e => { setPacQ(e.target.value); setPacSelecionado(null); setPacOpen(true); }}
+              onFocus={() => setPacOpen(true)}
+            />
+            {pacSelecionado && (
+              <div style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", width: 20, height: 20, borderRadius: "50%", background: T.b, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                onClick={() => { setPacSelecionado(null); setPacQ(""); setPacOpen(false); }}>
+                <Ic n="close" sz={10} c="#fff" sw={2.5} />
+              </div>
+            )}
+            {pacOpen && pacQ.length > 0 && (
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 9999, background: T.sur, border: `1.5px solid ${T.b}55`, borderRadius: 14, boxShadow: "0 12px 32px rgba(13,31,58,.16)", overflow: "hidden", maxHeight: 240, overflowY: "auto" }}>
+                {pacFiltrados.length > 0 ? pacFiltrados.map(p => {
+                  const nm = pacNm(p);
+                  const ini = nm.split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase();
+                  const sub = [p.plano, p.tel || p.whatsapp || p.telefone].filter(Boolean).join(" · ");
+                  return (
+                    <div key={p.id || nm} onClick={() => { setPacSelecionado(p); setPacQ(nm); setPacOpen(false); }}
+                      style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${T.br}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.bL}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: `linear-gradient(135deg,${T.b},${T.b}99)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#fff" }}>{ini}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>{nm}</div>
+                        {sub && <div style={{ fontSize: 11, color: T.txS }}>{sub}</div>}
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <div style={{ padding: "14px", textAlign: "center" }}>
+                    <div style={{ fontSize: 12, color: T.txM }}>Sem resultado para "{pacQ}"</div>
+                    <div style={{ fontSize: 11, color: T.txS, marginTop: 3 }}>Você pode usar esse nome assim mesmo</div>
+                  </div>
+                )}
+                {pacQ.trim() && !pacFiltrados.find(p => pacNm(p) === pacQ.trim()) && (
+                  <div onClick={() => { setPacSelecionado({ nm: pacQ.trim() }); setPacOpen(false); }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", cursor: "pointer", background: T.bL, borderTop: `1px solid ${T.br}` }}>
+                    <Ic n="plus" sz={12} c={T.b} />
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.b }}>Usar "{pacQ.trim()}"</div>
+                      <div style={{ fontSize: 10, color: T.txS }}>Paciente não cadastrado</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          {/* Info do paciente selecionado (tel / email) */}
+          {pacSelecionado && (telPaciente || emailPaciente) && (
+            <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 11, color: T.txS }}>
+              {telPaciente && <span>📱 {telPaciente}</span>}
+              {emailPaciente && <span>✉️ {emailPaciente}</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Motivo */}
         <div>
           <div style={{ fontSize: 12, color: "#888", fontWeight: 500, marginBottom: 4 }}>Motivo</div>
-          <select value={motivo} onChange={e => setMotivo(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: "0.5px solid #ccc", borderRadius: 8, fontSize: 13 }}>
+          <select value={motivo} onChange={e => setMotivo(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: `1px solid ${T.br}`, borderRadius: 8, fontSize: 13, fontFamily: "inherit", background: T.sur, color: T.tx }}>
             {["Retorno", "1ª consulta", "Resultado de exame", "Urgência"].map(m => <option key={m}>{m}</option>)}
           </select>
         </div>
+
+        {/* Data */}
         <div>
           <div style={{ fontSize: 12, color: "#888", fontWeight: 500, marginBottom: 4 }}>Data</div>
-          <input type="date" value={data} onChange={e => setData(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: "0.5px solid #ccc", borderRadius: 8, fontSize: 13 }} />
+          <input type="date" value={data} onChange={e => setData(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: `1px solid ${T.br}`, borderRadius: 8, fontSize: 13, fontFamily: "inherit", background: T.sur, color: T.tx }} />
         </div>
+
+        {/* Duração */}
         <div>
           <div style={{ fontSize: 12, color: "#888", fontWeight: 500, marginBottom: 4 }}>Duração</div>
-          <select value={duracao} onChange={e => setDuracao(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: "0.5px solid #ccc", borderRadius: 8, fontSize: 13 }}>
+          <select value={duracao} onChange={e => setDuracao(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: `1px solid ${T.br}`, borderRadius: 8, fontSize: 13, fontFamily: "inherit", background: T.sur, color: T.tx }}>
             {["20", "30", "45", "60"].map(d => <option key={d}>{d} minutos</option>)}
           </select>
         </div>
       </div>
 
+      {/* Horários */}
       <div style={{ fontSize: 12, color: "#888", fontWeight: 500, marginBottom: 8 }}>Horário disponível</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 16 }}>
         {HORARIOS.map(h => {
@@ -10281,42 +10571,52 @@ function Agendamento() {
           const sel = horario === h;
           return (
             <button key={h} disabled={ocupado} onClick={() => setHorario(h)}
-              style={{ padding: "7px 4px", textAlign: "center", fontSize: 12, border: `0.5px solid ${sel ? C.gold : "#ddd"}`, borderRadius: 8, cursor: ocupado ? "default" : "pointer", background: sel ? C.gold : ocupado ? "#f5f5f5" : "white", color: sel ? "white" : ocupado ? "#ccc" : "#555", fontWeight: sel ? 500 : 400 }}>
+              style={{ padding: "7px 4px", textAlign: "center", fontSize: 12, border: `0.5px solid ${sel ? T.b : "#ddd"}`, borderRadius: 8, cursor: ocupado ? "default" : "pointer", background: sel ? T.b : ocupado ? "#f5f5f5" : "white", color: sel ? "white" : ocupado ? "#ccc" : "#555", fontWeight: sel ? 600 : 400, fontFamily: "inherit" }}>
               {h}
             </button>
           );
         })}
       </div>
 
+      {/* Canal de envio */}
       <div style={{ fontSize: 12, color: "#888", fontWeight: 500, marginBottom: 8 }}>Enviar link via</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {[["whatsapp", "WhatsApp"], ["email", "E-mail"], ["ambos", "Ambos"]].map(([v, label]) => (
-          <button key={v} onClick={() => setCanal(v)} style={{ flex: 1, padding: "8px", border: `0.5px solid ${canal === v ? C.gold : "#ddd"}`, borderRadius: 8, background: canal === v ? "#fff9f0" : "white", color: canal === v ? "#8a6a32" : "#666", fontSize: 12, fontWeight: canal === v ? 500 : 400, cursor: "pointer" }}>
+        {[["whatsapp", "WhatsApp", "#25d366"], ["email", "E-mail", T.b], ["ambos", "Ambos", T.am]].map(([v, label, cor]) => (
+          <button key={v} onClick={() => setCanal(v)}
+            style={{ flex: 1, padding: "8px", border: `1.5px solid ${canal === v ? cor : T.br}`, borderRadius: 8, background: canal === v ? (v === "whatsapp" ? "#f0fdf4" : v === "email" ? T.bL : T.amB) : "white", color: canal === v ? cor : T.txM, fontSize: 12, fontWeight: canal === v ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
             {label}
           </button>
         ))}
       </div>
 
+      {/* Prévia da mensagem */}
       {nome && horario && (
         <div style={{ background: "#f5f0e8", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 12 }}>
           <div style={{ fontWeight: 500, marginBottom: 4, color: "#2C1F14" }}>Prévia da mensagem</div>
           <div style={{ whiteSpace: "pre-line", color: "#555", lineHeight: 1.6 }}>{mensagemWA}</div>
+          {!telPaciente && canal !== "email" && (
+            <div style={{ marginTop: 8, padding: "6px 10px", background: "#fff8e6", borderRadius: 6, color: "#8a6a32", fontSize: 11 }}>
+              ⚠️ Paciente sem número cadastrado — WhatsApp abrirá sem destinatário
+            </div>
+          )}
+          {msgEnviada && (
+            <div style={{ marginTop: 8, padding: "6px 10px", background: "#e6f5ee", borderRadius: 6, color: "#1a7a52", fontSize: 11 }}>
+              ✅ Mensagem enviada via {msgEnviada === "ambos" ? "WhatsApp e E-mail" : msgEnviada}
+            </div>
+          )}
         </div>
       )}
 
-      <div style={{display:"flex", gap:8, marginTop:4}}>
-        <button onClick={confirmar} disabled={enviando||!nome||!horario}
-          style={{ flex:1, padding:"11px 0", background:(enviando||!nome||!horario)?"#ccc":C.gold,
-            color:"white", border:"none", borderRadius:8, fontSize:13, fontWeight:600,
-            cursor:(enviando||!nome||!horario)?"default":"pointer" }}>
+      {/* Botões */}
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <button onClick={confirmar} disabled={enviando || !nome || !horario}
+          style={{ flex: 1, padding: "11px 0", background: (enviando || !nome || !horario) ? "#ccc" : T.b, color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (enviando || !nome || !horario) ? "default" : "pointer", fontFamily: "inherit" }}>
           {enviando ? "Confirmando..." : "Confirmar agendamento"}
         </button>
-        <button onClick={enviarWhatsApp} disabled={!nome||!horario}
-          title="Abrir WhatsApp com mensagem pronta"
-          style={{ padding:"11px 14px", background:(!nome||!horario)?"#ccc":"#25d366",
-            color:"white", border:"none", borderRadius:8, fontSize:13, fontWeight:600,
-            cursor:(!nome||!horario)?"default":"pointer" }}>
-          Enviar link WhatsApp
+        <button onClick={handleEnviarLink} disabled={enviandoMsg || !nome || !horario}
+          title={canal === "whatsapp" ? "Abrir WhatsApp com mensagem pronta" : canal === "email" ? "Enviar e-mail para o paciente" : "Enviar por WhatsApp e E-mail"}
+          style={{ padding: "11px 14px", background: (enviandoMsg || !nome || !horario) ? "#ccc" : canal === "whatsapp" ? "#25d366" : canal === "email" ? T.b : T.am, color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (enviandoMsg || !nome || !horario) ? "default" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+          {enviandoMsg ? "..." : canal === "whatsapp" ? "Enviar link WhatsApp" : canal === "email" ? "Enviar link E-mail" : "Enviar WhatsApp + Email"}
         </button>
       </div>
     </div>
@@ -11312,6 +11612,50 @@ async function fbRead(path) {
 //       → Agora qualquer valor não-null vindo do Firebase é aplicado
 //   [C] dataRef espelha o estado atual para que save() calcule next corretamente
 // ──────────────────────────────────────────────────────────────────────────────
+// ─── usePresence — quem está online no Portal agora ─────────────────────────
+// Lê sv_portal/presence a cada 2s e retorna Map: crmPacId → {online, lastSeen, nm}
+function usePresence() {
+  const [presMap, setPresMap] = React.useState({});
+  React.useEffect(() => {
+    let active = true;
+    async function poll() {
+      try {
+        const db = window._firebaseDB;
+        let data = null;
+        if (db) {
+          const snap = await db.ref("sv_portal/presence").once("value");
+          data = snap.val();
+        } else {
+          // REST fallback
+          const fbUrl = "https://crm-dra-ilza-default-rtdb.firebaseio.com";
+          const r = await fetch(`${fbUrl}/sv_portal/presence.json`);
+          if (r.ok) data = await r.json();
+        }
+        if (!active || !data) return;
+        // Considera online quem teve lastSeen nos últimos 60s
+        const now = Date.now();
+        const map = {};
+        Object.entries(data).forEach(([key, v]) => {
+          if (!v) return;
+          const ls = v.lastSeen ? new Date(v.lastSeen).getTime() : 0;
+          const ativo = v.online === true && (now - ls) < 60000;
+          if (ativo) {
+            const pacId = v.crmPacId || key;
+            map[pacId] = { online:true, lastSeen:v.lastSeen, nm:v.nm, email:v.email };
+            // Indexa também pela chave do email (fallback)
+            map[key] = { online:true, lastSeen:v.lastSeen, nm:v.nm, email:v.email };
+          }
+        });
+        setPresMap(map);
+      } catch(e) {}
+    }
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+  return presMap;
+}
+
 function useFirebaseData(fbPath, lsKey, defaultValue = []) {
   // Firebase é a ÚNICA fonte de verdade — sem localStorage
   const [data, setData] = useState(defaultValue);
