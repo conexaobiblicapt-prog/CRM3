@@ -10845,7 +10845,7 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
       if (!loaded) setLoaded(true);
     }
 
-    // Polling agressivo no início (mobile pode demorar): 1s × 5 vezes, depois 3s
+    // Polling agressivo no início (mobile pode demorar): 1s × 5 vezes, depois 2s
     let attempts = 0;
     sync();
     const fastId = setInterval(() => {
@@ -10853,7 +10853,7 @@ function useFirebaseData(fbPath, lsKey, defaultValue = []) {
       sync();
       if (attempts >= 5) {
         clearInterval(fastId);
-        const slowId = setInterval(sync, 3000);
+        const slowId = setInterval(sync, 2000);
         return () => { active = false; clearInterval(slowId); };
       }
     }, 1000);
