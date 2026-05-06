@@ -1087,20 +1087,54 @@ async function auditAddFirebase(entry) {
 }
 
 function auditAdd(u, a, d) {
+  const CATS = {
+    LOGIN:"acesso", LOGOUT:"acesso", LOGIN_ERRO:"acesso", LOGIN_CERT:"acesso", ACESSO_NEGADO:"acesso",
+    RESET_SOLICITADO:"acesso",
+    PAC_CRIADO:"paciente", PAC_EDITADO:"paciente", PAC_EXCLUIDO:"paciente", FICHA_ABERTA:"paciente",
+    EXAME_CRIADO:"exame", EXAME_EDITADO:"exame", EXAME_EXCLUIDO:"exame",
+    ANAMNESE_CRIADA:"clinico", ATESTADO_CRIADO:"clinico", CONSULTA_VISUALIZADA:"clinico",
+    FOTO_UPLOAD:"arquivo", FOTO_REMOVIDA:"arquivo", DOWNLOAD:"arquivo",
+    EXPORT:"arquivo", EXPORT_CSV:"arquivo", IMPORT:"arquivo", IMPORT_CSV:"arquivo", BACKUP_GERADO:"arquivo",
+    ESTOQUE_ENTRADA:"estoque", ESTOQUE_SAIDA:"estoque", ESTOQUE_LIMPO:"estoque",
+    USER_CRIADO:"usuario", USER_EDITADO:"usuario", USER_REMOVIDO:"usuario",
+    SENHA_ALTERADA:"usuario", VER_SENHAS:"usuario",
+    ATUALIZ_SISTEMA:"sistema", QUEDA_SISTEMA:"sistema", ERRO_SISTEMA:"sistema",
+    CONFIG_LOGIN:"sistema",
+  };
   const entry = {
-    ts:    new Date().toISOString(),           // ISO 8601 — padrão internacional
-    tsBR:  new Date().toLocaleString("pt-BR"), // leitura humana BR
-    u,                                         // usuário
-    a,                                         // ação
-    d:     (d||"").slice(0,120),               // detalhes
-    ip:    "client",                           // IP (browser não expõe, seria no backend)
-    ua:    navigator.userAgent.slice(0,80),    // navegador/dispositivo
+    ts:    new Date().toISOString(),
+    tsBR:  new Date().toLocaleString("pt-BR"),
+    dtNum: Date.now(),
+    u, a,
+    d:     (d||"").slice(0,200),
+    cat:   CATS[a] || "outro",
+    ip:    "client",
+    ua:    navigator.userAgent.slice(0,80),
   };
   _logs.unshift(entry);
   if(_logs.length > 500) _logs.length = 500;
-  // Persiste no Firebase (append-only — nenhum registro é sobrescrito)
   auditAddFirebase(entry);
 }
+
+/* ── Configuração de layout da página de login (persiste em localStorage) ── */
+const LOGIN_CFG_KEY = "crm_login_cfg";
+function getLoginCfg() {
+  try { return JSON.parse(localStorage.getItem(LOGIN_CFG_KEY)||"null") || {}; } catch { return {}; }
+}
+function setLoginCfg(cfg) {
+  try { localStorage.setItem(LOGIN_CFG_KEY, JSON.stringify(cfg)); } catch{}
+}
+
+/* ── Detector de erros de sistema ── */
+window.addEventListener("error", ev => {
+  const msg = (ev.message||"").slice(0,120);
+  const src  = (ev.filename||"").split("/").pop();
+  auditAdd(window._crmUsuario?.nome||"sistema","ERRO_SISTEMA",`${msg} — ${src}:${ev.lineno||0}`);
+});
+window.addEventListener("unhandledrejection", ev => {
+  const msg = (ev.reason?.message||String(ev.reason||"promise rejeitada")).slice(0,120);
+  auditAdd(window._crmUsuario?.nome||"sistema","ERRO_SISTEMA",`Promise: ${msg}`);
+});
 const fmtMoeda=v=>`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
 
 /* ════════════════════════════════════════════════════════════════
@@ -1567,11 +1601,10 @@ function EstoqueAlertaPopup({itens,onClose}){
 ════════════════════════════════════════════════════════════════ */
 function Login({onLogin,users}){
   const _saved = (()=>{try{const s=sessionStorage.getItem("crm_saved_login");return s?JSON.parse(s):null;}catch{return null;}})();
-  // Recupera usuário salvo por ID (nunca por senha)
   const _savedUser = _saved?.uid ? users.find(u=>u.id===_saved.uid) : null;
   const [step,setStep]=useState("creds");
   const [user,setUser]=useState(_savedUser?.u||"");
-  const [pass,setPass]=useState("");  // senha NUNCA fica salva
+  const [pass,setPass]=useState("");
   const [lembrar,setLembrar]=useState(!!_saved);
   const [showP,setShowP]=useState(false);
   const [err,setErr]=useState("");
@@ -1585,6 +1618,18 @@ function Login({onLogin,users}){
   const [certLoading,setCertLoading]=useState(false);
   const [showConfirmClose,setShowConfirmClose]=useState(false);
   const certRef=useRef();
+
+  // Config de layout definida pelo admin (apenas visível para admin)
+  const cfg = getLoginCfg();
+  const loginTitulo    = cfg.titulo    || "Bem-vinda de volta";
+  const loginSubtitulo = cfg.subtitulo || "Acesso ao sistema clínico";
+  const avisoTipo      = cfg.avisoTipo || "none";
+  const avisoTxt       = cfg.avisoTxt  || "";
+  const showFeed       = !!cfg.showFeed;
+  const feedItens = showFeed ? _logs.slice(0,5).map(l=>{
+    const m = AUDIT_META[l.a]||{icon:"⚙️",c:"#3b9de8",label:l.a};
+    return { icon:m.icon, label:m.label, u:l.u, ts:(l.tsBR||l.ts||"").slice(-8,-3)||"—", c:m.c };
+  }) : [];
 
   function fecharApp(){
     if(window.electronAPI?.fecharApp) window.electronAPI.fecharApp();
@@ -1820,9 +1865,30 @@ function Login({onLogin,users}){
           <div style={{display:"flex",flexDirection:"column",gap:0}}>
             <div style={{textAlign:"center",marginBottom:22}}>
               <h2 style={{color:"#ffffff",fontSize:22,fontWeight:900,margin:"0 0 4px",
-                fontFamily:"Georgia,serif",letterSpacing:"-.02em"}}>Bem-vinda de volta</h2>
-              <p style={{color:ic.txM,fontSize:13,margin:0}}>Acesso ao sistema clínico</p>
+                fontFamily:"Georgia,serif",letterSpacing:"-.02em"}}>{loginTitulo}</h2>
+              <p style={{color:ic.txM,fontSize:13,margin:0}}>{loginSubtitulo}</p>
             </div>
+
+            {/* Aviso admin configurável */}
+            {avisoTipo!=="none"&&avisoTxt&&(
+              <div style={{background:avisoTipo==="err"?"rgba(239,68,68,.15)":avisoTipo==="warn"?"rgba(245,158,11,.15)":avisoTipo==="ok"?"rgba(34,197,94,.15)":"rgba(59,157,232,.15)",border:`1px solid ${avisoTipo==="err"?"rgba(239,68,68,.4)":avisoTipo==="warn"?"rgba(245,158,11,.4)":avisoTipo==="ok"?"rgba(34,197,94,.4)":"rgba(59,157,232,.4)"}`,borderRadius:10,padding:"10px 14px",fontSize:12,color:avisoTipo==="err"?"#fca5a5":avisoTipo==="warn"?"#fcd34d":avisoTipo==="ok"?"#86efac":"#93c5fd",marginBottom:14,lineHeight:1.5}}>
+                {avisoTipo==="err"?"🚨":avisoTipo==="warn"?"⚠️":avisoTipo==="ok"?"✅":"ℹ️"} {avisoTxt}
+              </div>
+            )}
+
+            {/* Feed de atividade (admin only) */}
+            {showFeed&&feedItens.length>0&&(
+              <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+                <div style={{fontSize:9,color:"rgba(168,196,224,.5)",fontWeight:700,textTransform:"uppercase",letterSpacing:".1em",marginBottom:8}}>⚡ Atividade recente</div>
+                {feedItens.map((f,i)=>(
+                  <div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"4px 0",borderBottom:i<feedItens.length-1?"1px solid rgba(255,255,255,.06)":"none"}}>
+                    <span style={{fontSize:12}}>{f.icon}</span>
+                    <span style={{fontSize:10,color:f.c,fontWeight:600,flex:1}}>{f.label}</span>
+                    <span style={{fontSize:9,color:"rgba(168,196,224,.4)",fontFamily:"monospace"}}>{f.ts}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{marginBottom:14}}>
               <label style={SL_DARK}>Usuário ou E-mail</label>
@@ -8043,8 +8109,125 @@ function UptimeRobotWidget() {
 }
 
 
+
+/* ════════════════════════════════════════════════════════════════
+   ADMIN ENTERPRISE — Paleta, Metadados de Auditoria, Componentes
+   Inspirado em: Datadog · Linear · Mixpanel · HubSpot Admin
+════════════════════════════════════════════════════════════════ */
+
+const AD = {
+  bg:    "#0b1929",
+  bg2:   "#0f2035",
+  card:  "rgba(255,255,255,.05)",
+  brd:   "rgba(255,255,255,.10)",
+  brdHi: "rgba(59,157,232,.45)",
+  tx:    "#e2e8f0",
+  txM:   "rgba(200,220,240,.65)",
+  txS:   "rgba(200,220,240,.38)",
+  p:     "#3b9de8",
+  gr:    "#22c55e",
+  re:    "#ef4444",
+  am:    "#f59e0b",
+  pu:    "#a78bfa",
+  cy:    "#06b6d4",
+  grBd:  "rgba(34,197,94,.25)",
+  reBd:  "rgba(239,68,68,.25)",
+  amBd:  "rgba(245,158,11,.25)",
+};
+
+const AUDIT_META = {
+  LOGIN:             { icon:"🔓", c:AD.gr,  label:"Login efetuado",         cat:"acesso"   },
+  LOGOUT:            { icon:"🔒", c:AD.re,  label:"Logout",                 cat:"acesso"   },
+  LOGIN_ERRO:        { icon:"⛔", c:AD.re,  label:"Falha de login",         cat:"acesso"   },
+  LOGIN_CERT:        { icon:"🪪", c:AD.gr,  label:"Login por certificado",  cat:"acesso"   },
+  ACESSO_NEGADO:     { icon:"🚫", c:AD.re,  label:"Acesso negado",          cat:"acesso"   },
+  RESET_SOLICITADO:  { icon:"📧", c:AD.am,  label:"Reset de senha",         cat:"acesso"   },
+  PAC_CRIADO:        { icon:"➕", c:AD.gr,  label:"Paciente cadastrado",    cat:"paciente" },
+  PAC_EDITADO:       { icon:"✏️", c:AD.p,   label:"Paciente editado",       cat:"paciente" },
+  PAC_EXCLUIDO:      { icon:"🗑️", c:AD.re,  label:"Paciente excluído",      cat:"paciente" },
+  FICHA_ABERTA:      { icon:"📂", c:AD.cy,  label:"Ficha visualizada",      cat:"paciente" },
+  EXAME_CRIADO:      { icon:"🔬", c:AD.gr,  label:"Exame inserido",         cat:"exame"    },
+  EXAME_EDITADO:     { icon:"✏️", c:AD.p,   label:"Exame editado",          cat:"exame"    },
+  EXAME_EXCLUIDO:    { icon:"🗑️", c:AD.re,  label:"Exame excluído",         cat:"exame"    },
+  ANAMNESE_CRIADA:   { icon:"📋", c:AD.pu,  label:"Anamnese criada",        cat:"clinico"  },
+  ATESTADO_CRIADO:   { icon:"📄", c:AD.pu,  label:"Atestado emitido",       cat:"clinico"  },
+  CONSULTA_VISUALIZADA:{icon:"👁",c:AD.cy,  label:"Consulta visualizada",   cat:"clinico"  },
+  FOTO_UPLOAD:       { icon:"🖼️", c:AD.am,  label:"Foto enviada",           cat:"arquivo"  },
+  FOTO_REMOVIDA:     { icon:"🖼️", c:AD.re,  label:"Foto removida",          cat:"arquivo"  },
+  DOWNLOAD:          { icon:"⬇️", c:AD.am,  label:"Download realizado",     cat:"arquivo"  },
+  EXPORT:            { icon:"📤", c:AD.am,  label:"Exportação",             cat:"arquivo"  },
+  EXPORT_CSV:        { icon:"📤", c:AD.am,  label:"Exportação CSV",         cat:"arquivo"  },
+  IMPORT:            { icon:"📥", c:AD.p,   label:"Importação",             cat:"arquivo"  },
+  IMPORT_CSV:        { icon:"📥", c:AD.p,   label:"Importação CSV",         cat:"arquivo"  },
+  BACKUP_GERADO:     { icon:"💾", c:AD.am,  label:"Backup gerado",          cat:"arquivo"  },
+  ESTOQUE_ENTRADA:   { icon:"📦", c:AD.gr,  label:"Entrada estoque",        cat:"estoque"  },
+  ESTOQUE_SAIDA:     { icon:"📤", c:AD.am,  label:"Saída estoque",          cat:"estoque"  },
+  ESTOQUE_LIMPO:     { icon:"🗑️", c:AD.re,  label:"Estoque zerado",         cat:"estoque"  },
+  USER_CRIADO:       { icon:"👤", c:AD.gr,  label:"Usuário criado",         cat:"usuario"  },
+  USER_EDITADO:      { icon:"✏️", c:AD.p,   label:"Usuário editado",        cat:"usuario"  },
+  USER_REMOVIDO:     { icon:"👤", c:AD.re,  label:"Usuário removido",       cat:"usuario"  },
+  SENHA_ALTERADA:    { icon:"🔑", c:AD.am,  label:"Senha alterada",         cat:"usuario"  },
+  VER_SENHAS:        { icon:"👁", c:AD.re,  label:"Senhas visualizadas",    cat:"usuario"  },
+  ATUALIZ_SISTEMA:   { icon:"🔄", c:AD.cy,  label:"Atualização do sistema", cat:"sistema"  },
+  QUEDA_SISTEMA:     { icon:"⚡", c:AD.re,  label:"Queda do sistema",       cat:"sistema"  },
+  ERRO_SISTEMA:      { icon:"❗", c:AD.re,  label:"Erro do sistema",        cat:"sistema"  },
+  CONFIG_LOGIN:      { icon:"⚙️", c:AD.cy,  label:"Config login alterada",  cat:"sistema"  },
+};
+
+function ameta(a){ return AUDIT_META[a]||{icon:"⚙️",c:AD.p,label:a,cat:"outro"}; }
+
+function AuditBadge({a,small}){
+  const m=ameta(a);
+  return(
+    <span style={{
+      background:`${m.c}18`,color:m.c,
+      border:`1px solid ${m.c}35`,
+      padding:small?"1px 7px":"2px 9px",
+      borderRadius:99,fontSize:small?9:10,
+      fontWeight:700,whiteSpace:"nowrap",
+      display:"inline-flex",alignItems:"center",gap:4,
+    }}>
+      {m.icon} {m.label}
+    </span>
+  );
+}
+
+function TimelineRow({l,index}){
+  const m=ameta(l.a);
+  const isErr=["LOGIN_ERRO","ACESSO_NEGADO","ERRO_SISTEMA","QUEDA_SISTEMA"].includes(l.a);
+  return(
+    <div style={{display:"flex",gap:0,alignItems:"stretch",opacity:index>50?.75:1}}>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",width:34,flexShrink:0}}>
+        <div style={{width:28,height:28,borderRadius:"50%",background:`${m.c}18`,border:`1.5px solid ${m.c}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0,zIndex:1}}>{m.icon}</div>
+        <div style={{width:1,flex:1,background:"rgba(255,255,255,.07)",minHeight:6}}/>
+      </div>
+      <div style={{flex:1,marginLeft:8,marginBottom:5,background:isErr?"rgba(239,68,68,.05)":AD.card,border:`1px solid ${isErr?AD.reBd:AD.brd}`,borderLeft:`2.5px solid ${m.c}`,borderRadius:"0 9px 9px 0",padding:"7px 12px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:2}}>
+          <AuditBadge a={l.a} small/>
+          <span style={{fontSize:10,fontWeight:700,color:AD.tx}}>{l.u}</span>
+          <span style={{fontSize:9,color:AD.txS,marginLeft:"auto",fontFamily:"monospace"}}>{l.tsBR||l.ts?.replace("T"," ").slice(0,16)||"—"}</span>
+        </div>
+        {l.d&&<div style={{fontSize:10,color:AD.txM,wordBreak:"break-all"}}>{l.d}</div>}
+        {l.ua&&<div style={{fontSize:9,color:AD.txS,marginTop:2}}>{l.ua.includes("Mobile")?"📱 Mobile":"🖥️ Desktop"}</div>}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({icon,label,val,sub,c}){
+  return(
+    <div style={{background:AD.card,border:`1.5px solid ${AD.brd}`,borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+      <div style={{fontSize:20,marginBottom:4}}>{icon}</div>
+      <div style={{fontSize:24,fontWeight:900,color:c,lineHeight:1}}>{val}</div>
+      <div style={{fontSize:10,color:AD.txM,fontWeight:600,marginTop:3,textTransform:"uppercase",letterSpacing:".06em"}}>{label}</div>
+      {sub&&<div style={{fontSize:9,color:AD.txS,marginTop:2}}>{sub}</div>}
+      <div style={{position:"absolute",bottom:-16,right:-16,width:64,height:64,borderRadius:"50%",background:`${c}10`,pointerEvents:"none"}}/>
+    </div>
+  );
+}
+
 function PageAdmin({usuario,users,setUsers}){
-  const [tab,setTab]=useState("logs");
+  const [tab,setTab]=useState("dashboard");
   const [showSenhas,setShowSenhas]=useState(false);
   const [editUser,setEditUser]=useState(null);
   const [editForm,setEditForm]=useState({});
@@ -8052,484 +8235,511 @@ function PageAdmin({usuario,users,setUsers}){
   const [adminConf,setAdminConf]=useState("");
   const [filtroAcao,setFiltroAcao]=useState("todos");
   const [filtroUser,setFiltroUser]=useState("todos");
+  const [filtroCat,setFiltroCat]=useState("todos");
+  const [filtroBusca,setFiltroBusca]=useState("");
   const [showNovoUser,setShowNovoUser]=useState(false);
   const [novoForm,setNovoForm]=useState({nome:"",u:"",email:"",s:"",role:"recepcao"});
   const [novoMsg,setNovoMsg]=useState({text:"",ok:false});
   const [confirmDel,setConfirmDel]=useState(null);
 
-  const ACOES_CORES={
-    LOGIN:"#1e8449", LOGOUT:"#c0392b", SENHA_ALTERADA:"#d4830a",
-    REVEAL:"#6c3483", OCULTAR:"#6c3483",
-    LOGIN_ERRO:"#c0392b", ACESSO_NEGADO:"#c0392b",
-    USER_EDITADO:"#1a5fa8", USER_CRIADO:"#1e8449", USER_REMOVIDO:"#c0392b",
-  };
+  // Firebase logs (persistentes)
+  const [fbLogs,setFbLogs]=React.useState([]);
+  const [fbLogsLoading,setFbLogsLoading]=React.useState(false);
+  const [fbLogsFiltroAcao,setFbLogsFiltroAcao]=React.useState("todos");
+  const [fbLogsFiltroUser,setFbLogsFiltroUser]=React.useState("todos");
+  const [fbLogsFiltroData,setFbLogsFiltroData]=React.useState("todos");
+  const [fbLogsBusca,setFbLogsBusca]=React.useState("");
+  const [fbLogsPage,setFbLogsPage]=React.useState(1);
+  const FB_PAGE_SIZE=30;
+
+  const TABS=[
+    {k:"dashboard",label:"📊 Dashboard"},
+    {k:"historico", label:"📜 Histórico"},
+    {k:"usuarios",  label:"👥 Usuários"},
+    {k:"lgpd",      label:"⚖️ LGPD"},
+    {k:"backup",    label:"💾 Backup"},
+    {k:"senhas",    label:"🔑 Senhas"},
+    {k:"updates",   label:"🔄 Sistema"},
+    {k:"config",    label:"⚙️ Config Login"},
+  ];
+
+  const CATS_FILTRO=["todos","acesso","paciente","exame","clinico","arquivo","estoque","usuario","sistema"];
+
+  function carregarFbLogs(){
+    setFbLogsLoading(true);
+    fetch("https://crm-dra-ilza-default-rtdb.firebaseio.com/audit_log.json?orderBy=%22dtNum%22&limitToLast=1000")
+      .then(r=>r.json())
+      .then(data=>{
+        if(!data){setFbLogs([]);return;}
+        setFbLogs(Object.values(data).sort((a,b)=>(b.dtNum||0)-(a.dtNum||0)));
+      })
+      .catch(()=>setFbLogs([]))
+      .finally(()=>setFbLogsLoading(false));
+  }
+
+  React.useEffect(()=>{ if(tab==="historico"||tab==="dashboard") carregarFbLogs(); },[tab]);
 
   const logsAll=[..._logs];
-  const logsFiltered=logsAll.filter(l=>{
-    if(filtroAcao!=="todos"&&l.a!==filtroAcao) return false;
-    if(filtroUser!=="todos"&&l.u!==filtroUser) return false;
-    return true;
-  });
-
-  const acoesUnicas=[...new Set(logsAll.map(l=>l.a))];
-  const usersLog=[...new Set(logsAll.map(l=>l.u))];
+  const allLogs=fbLogs.length>0?fbLogs:logsAll;
 
   const stats={
-    logins: logsAll.filter(l=>l.a==="LOGIN").length,
-    erros:  logsAll.filter(l=>l.a==="LOGIN_ERRO"||l.a==="ACESSO_NEGADO").length,
-    senhas: logsAll.filter(l=>l.a==="SENHA_ALTERADA").length,
-    reveals:logsAll.filter(l=>l.a==="REVEAL").length,
+    logins:     allLogs.filter(l=>l.a==="LOGIN").length,
+    erros:      allLogs.filter(l=>l.a==="LOGIN_ERRO"||l.a==="ACESSO_NEGADO").length,
+    errsSist:   allLogs.filter(l=>l.a==="ERRO_SISTEMA"||l.a==="QUEDA_SISTEMA").length,
+    pacCriados: allLogs.filter(l=>l.a==="PAC_CRIADO").length,
+    pacExclui:  allLogs.filter(l=>l.a==="PAC_EXCLUIDO").length,
+    exCriados:  allLogs.filter(l=>l.a==="EXAME_CRIADO").length,
+    exExclui:   allLogs.filter(l=>l.a==="EXAME_EXCLUIDO").length,
+    downloads:  allLogs.filter(l=>["DOWNLOAD","EXPORT","EXPORT_CSV","BACKUP_GERADO"].includes(l.a)).length,
+    fotos:      allLogs.filter(l=>l.a==="FOTO_UPLOAD").length,
+    backups:    allLogs.filter(l=>l.a==="BACKUP_GERADO").length,
+    clinicos:   allLogs.filter(l=>["ANAMNESE_CRIADA","ATESTADO_CRIADO","CONSULTA_VISUALIZADA"].includes(l.a)).length,
+    senhas:     allLogs.filter(l=>l.a==="SENHA_ALTERADA").length,
   };
 
+  const topUsers=Object.entries(
+    allLogs.reduce((acc,l)=>{ acc[l.u]=(acc[l.u]||0)+1; return acc; },{})
+  ).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  const criticas=allLogs.filter(l=>
+    ["LOGIN_ERRO","ACESSO_NEGADO","PAC_EXCLUIDO","EXAME_EXCLUIDO","USER_REMOVIDO","ERRO_SISTEMA","QUEDA_SISTEMA","VER_SENHAS"].includes(l.a)
+  ).slice(0,10);
+
+  const fbLogsAcoesUnicas=[...new Set(fbLogs.map(l=>l.a).filter(Boolean))].sort();
+  const fbLogsUsersUnicos=[...new Set(fbLogs.map(l=>l.u).filter(Boolean))].sort();
+
+  const fbLogsFiltrados=fbLogs.filter(l=>{
+    if(fbLogsFiltroAcao!=="todos"&&l.a!==fbLogsFiltroAcao) return false;
+    if(fbLogsFiltroUser!=="todos"&&l.u!==fbLogsFiltroUser) return false;
+    if(filtroCat!=="todos"&&(l.cat||ameta(l.a).cat)!==filtroCat) return false;
+    if(fbLogsBusca){
+      const q=fbLogsBusca.toLowerCase();
+      if(!(l.u||"").toLowerCase().includes(q)&&!(l.d||"").toLowerCase().includes(q)&&!(l.a||"").toLowerCase().includes(q)) return false;
+    }
+    if(fbLogsFiltroData!=="todos"){
+      const now=Date.now();
+      const dt=l.dtNum||new Date(l.ts||0).getTime();
+      if(fbLogsFiltroData==="hoje"&&(now-dt)>86400000) return false;
+      if(fbLogsFiltroData==="semana"&&(now-dt)>604800000) return false;
+      if(fbLogsFiltroData==="mes"&&(now-dt)>2592000000) return false;
+    }
+    return true;
+  });
+  const fbLogsPages=Math.ceil(fbLogsFiltrados.length/FB_PAGE_SIZE)||1;
+  const fbLogsPaged=fbLogsFiltrados.slice((fbLogsPage-1)*FB_PAGE_SIZE,fbLogsPage*FB_PAGE_SIZE);
+
+  // Backup
+  const [backupLoading,setBackupLoading]=React.useState(false);
+  async function gerarBackup(){
+    setBackupLoading(true);
+    try{
+      const eps=["crm_pats_v26","crm_consultas_v26","crm_exames_v26","crm_estoque_v26","crm_agenda_v26"];
+      const backup={geradoEm:new Date().toISOString(),versao:"v27",dados:{}};
+      await Promise.all(eps.map(async ep=>{
+        const r=await fetch(`https://crm-dra-ilza-default-rtdb.firebaseio.com/crm_data/${ep}.json`);
+        backup.dados[ep]=await r.json();
+      }));
+      const ra=await fetch("https://crm-dra-ilza-default-rtdb.firebaseio.com/audit_log.json");
+      backup.audit_log=await ra.json();
+      const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=`backup_crm_drailza_${new Date().toISOString().slice(0,10)}.json`;a.click();
+      URL.revokeObjectURL(url);
+      auditAdd(usuario.nome,"BACKUP_GERADO",`Backup v27 · ${new Date().toLocaleString("pt-BR")}`);
+    }catch(e){alert("Erro ao gerar backup: "+e.message);}
+    finally{setBackupLoading(false);}
+  }
+
+  // Config login
+  const [loginCfg,setLoginCfgState]=React.useState(()=>getLoginCfg());
+  function saveLoginCfg(patch){
+    const next={...loginCfg,...patch};
+    setLoginCfgState(next);
+    setLoginCfg(next);
+    auditAdd(usuario.nome,"CONFIG_LOGIN","Config login atualizada");
+  }
+
+  // Usuários CRUD
   function saveEditUser(){
     if(!editUser) return;
     if(editForm.s&&editForm.s.length<6){setSenhaMsg({text:"Senha mínima 6 caracteres.",ok:false});return;}
     setUsers(prev=>prev.map(u=>u.id===editUser.id?{...u,...editForm}:u));
-    auditAdd(usuario.nome,"USER_EDITADO",`Editou usuário: ${editUser.u}`);
+    auditAdd(usuario.nome,"USER_EDITADO",`Editou: @${editUser.u}`);
     setSenhaMsg({text:"✅ Usuário atualizado!",ok:true});
     setTimeout(()=>{setSenhaMsg({text:"",ok:false});setEditUser(null);},2000);
   }
-
   function criarUsuario(){
     if(!novoForm.nome.trim()||!novoForm.u.trim()||!novoForm.s.trim()){setNovoMsg({text:"Preencha nome, usuário e senha.",ok:false});return;}
-    if(novoForm.s.length < 8){setNovoMsg({text:"Senha deve ter pelo menos 8 caracteres.",ok:false});return;}
+    if(novoForm.s.length<8){setNovoMsg({text:"Senha deve ter pelo menos 8 caracteres.",ok:false});return;}
     if(!/[A-Z]/.test(novoForm.s)||!/[0-9]/.test(novoForm.s)){setNovoMsg({text:"Senha precisa ter letras maiúsculas e números.",ok:false});return;}
-    if(novoForm.s.length<6){setNovoMsg({text:"Senha mínima 6 caracteres.",ok:false});return;}
     if(users.find(u=>u.u.toLowerCase()===novoForm.u.trim().toLowerCase())){setNovoMsg({text:"Login já existe. Escolha outro.",ok:false});return;}
     const novo={...novoForm,id:Date.now(),u:novoForm.u.trim(),nome:novoForm.nome.trim()};
     setUsers(prev=>[...prev,novo]);
-    auditAdd(usuario.nome,"USER_CRIADO",`Criou usuário: ${novo.u} (${novo.role})`);
-    setNovoMsg({text:"✅ Usuário criado com sucesso!",ok:true});
+    auditAdd(usuario.nome,"USER_CRIADO",`Criou: @${novo.u} (${novo.role})`);
+    setNovoMsg({text:"✅ Usuário criado!",ok:true});
     setTimeout(()=>{setNovoMsg({text:"",ok:false});setShowNovoUser(false);setNovoForm({nome:"",u:"",email:"",s:"",role:"recepcao"});},2000);
   }
-
   function excluirUsuario(u){
-    if(u.id===usuario.id){alert("Você não pode excluir seu próprio usuário.");return;}
     setUsers(prev=>prev.filter(x=>x.id!==u.id));
-    auditAdd(usuario.nome,"USER_REMOVIDO",`Removeu usuário: ${u.u}`);
+    auditAdd(usuario.nome,"USER_REMOVIDO",`Removeu: @${u.u}`);
     setConfirmDel(null);
   }
 
-  const TABS=[
-    {k:"logs",      label:"📋 Logs de Acesso"},
-    {k:"auditoria", label:"🔐 Auditoria Completa"},
-    {k:"lgpd",      label:"⚖️ LGPD"},
-    {k:"backup",    label:"💾 Backup"},
-    {k:"usuarios",  label:"👥 Usuários"},
-    {k:"senhas",    label:"🔑 Senhas"},
-    {k:"updates",   label:"🔄 Atualizações"},
-    {k:"resumo",    label:"📊 Resumo"},
-  ];
-
-  // Carrega logs do Firebase (persistentes — sobrevivem a logout/reload)
-  const [fbLogs, setFbLogs] = React.useState([]);
-  const [fbLogsLoading, setFbLogsLoading] = React.useState(false);
-  const [fbLogsFiltroAcao, setFbLogsFiltroAcao] = React.useState("todos");
-  const [fbLogsFiltroUser, setFbLogsFiltroUser] = React.useState("todos");
-  React.useEffect(() => {
-    if (tab !== "auditoria") return;
-    setFbLogsLoading(true);
-    fetch("https://crm-dra-ilza-default-rtdb.firebaseio.com/audit_log.json?orderBy=%22dtNum%22&limitToLast=500")
-      .then(r => r.json())
-      .then(data => {
-        if (!data) { setFbLogs([]); return; }
-        const lista = Object.values(data)
-          .sort((a,b) => (b.ts||"") > (a.ts||"") ? 1 : -1);
-        setFbLogs(lista);
-      })
-      .catch(() => setFbLogs([]))
-      .finally(() => setFbLogsLoading(false));
-  }, [tab]);
-
-  // Backup: gera JSON de todos os dados
-  async function gerarBackup() {
-    try {
-      const endpoints = ["crm_pats_v26","crm_consultas_v26","crm_exames_v26","crm_estoque_v26","crm_agenda_v26"];
-      const backup = { geradoEm: new Date().toISOString(), versao: "v26", dados: {} };
-      await Promise.all(endpoints.map(async ep => {
-        const r = await fetch(`https://crm-dra-ilza-default-rtdb.firebaseio.com/crm_data/${ep}.json`);
-        backup.dados[ep] = await r.json();
-      }));
-      // Inclui logs de auditoria
-      const ra = await fetch("https://crm-dra-ilza-default-rtdb.firebaseio.com/audit_log.json");
-      backup.audit_log = await ra.json();
-      const blob = new Blob([JSON.stringify(backup, null, 2)], {type:"application/json"});
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
-      a.download = `backup_crm_drailza_${new Date().toISOString().slice(0,10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      auditAdd(usuario.nome, "BACKUP_GERADO", `Backup completo baixado em ${new Date().toLocaleString("pt-BR")}`);
-    } catch(e) { alert("Erro ao gerar backup: " + e.message); }
-  }
-
-  const fbLogsAcoesUnicas = [...new Set(fbLogs.map(l=>l.a).filter(Boolean))];
-  const fbLogsUsersUnicos = [...new Set(fbLogs.map(l=>l.u).filter(Boolean))];
-  const fbLogsFiltrados   = fbLogs.filter(l => {
-    if (fbLogsFiltroAcao !== "todos" && l.a !== fbLogsFiltroAcao) return false;
-    if (fbLogsFiltroUser !== "todos" && l.u !== fbLogsFiltroUser) return false;
-    return true;
-  });
-
   return(
-    <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
-      {/* Header */}
-      <div style={{background:`linear-gradient(135deg,#0d2137,#1a3550)`,padding:"16px 24px",flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
-          <span style={{fontSize:24}}>🛡️</span>
-          <div>
-            <h2 style={{color:"#fff",fontSize:17,fontWeight:900,margin:0}}>Painel Admin — Segurança Cyber</h2>
-            <p style={{color:"rgba(168,196,224,.7)",fontSize:11,margin:0}}>Controle total de acessos, usuários e eventos de segurança </p>
+    <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden",background:AD.bg}}>
+
+      {/* HEADER */}
+      <div style={{background:"linear-gradient(135deg,#0d1f36,#0f2a45)",padding:"12px 20px",flexShrink:0,borderBottom:`1px solid ${AD.brd}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#1a5fa8,#3b9de8)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡️</div>
+          <div style={{flex:1}}>
+            <div style={{color:"#fff",fontSize:14,fontWeight:900}}>Painel Administrador</div>
+            <div style={{color:AD.txS,fontSize:10}}>CRM Dra. Ilza · <strong style={{color:AD.p}}>{usuario.nome}</strong></div>
           </div>
-          <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-            <span style={{background:"rgba(30,132,73,.2)",color:"#6fcf97",border:"1px solid rgba(30,132,73,.4)",padding:"3px 10px",borderRadius:99,fontSize:10,fontWeight:700}}>{stats.logins} logins</span>
-            {stats.erros>0&&<span style={{background:"rgba(192,57,43,.2)",color:"#f87171",border:"1px solid rgba(192,57,43,.4)",padding:"3px 10px",borderRadius:99,fontSize:10,fontWeight:700}}>⚠️ {stats.erros} erros</span>}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <span style={{background:"rgba(34,197,94,.12)",color:AD.gr,border:`1px solid ${AD.grBd}`,padding:"2px 8px",borderRadius:99,fontSize:9,fontWeight:700}}>● Online</span>
+            {stats.erros>0&&<span style={{background:"rgba(239,68,68,.12)",color:AD.re,border:`1px solid ${AD.reBd}`,padding:"2px 8px",borderRadius:99,fontSize:9,fontWeight:700}}>⚠️ {stats.erros} falha{stats.erros>1?"s":""}</span>}
+            {stats.errsSist>0&&<span style={{background:"rgba(239,68,68,.12)",color:AD.re,border:`1px solid ${AD.reBd}`,padding:"2px 8px",borderRadius:99,fontSize:9,fontWeight:700}}>❗{stats.errsSist} erro{stats.errsSist>1?"s":""}</span>}
           </div>
         </div>
-        <div style={{display:"flex",gap:6}}>
+        <div style={{display:"flex",gap:3,overflowX:"auto",paddingBottom:1}}>
           {TABS.map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",borderRadius:8,border:"none",background:tab===t.k?"rgba(59,157,232,.25)":"rgba(255,255,255,.07)",color:tab===t.k?"#fff":"rgba(168,196,224,.7)",fontWeight:tab===t.k?700:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",borderBottom:tab===t.k?"2px solid #3b9de8":"2px solid transparent"}}>{t.label}</button>
+            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"5px 12px",borderRadius:7,border:"none",whiteSpace:"nowrap",background:tab===t.k?"rgba(59,157,232,.22)":"transparent",color:tab===t.k?"#fff":AD.txM,fontWeight:tab===t.k?700:400,fontSize:11,cursor:"pointer",fontFamily:"inherit",borderBottom:tab===t.k?`2px solid ${AD.p}`:"2px solid transparent",transition:"all .15s"}}>{t.label}</button>
           ))}
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{flex:1,overflowY:"auto",padding:20,background:C.bg}}>
+      {/* CONTENT */}
+      <div style={{flex:1,overflowY:"auto",padding:18,background:AD.bg}}>
 
-        {/* ── ABA AUDITORIA FIREBASE (persistente entre sessões) ── */}
-        {tab==="auditoria"&&(
-          <div>
-            <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
-              <div style={{flex:1,minWidth:140}}>
-                <label style={SL}>Ação</label>
-                <select value={fbLogsFiltroAcao} onChange={e=>setFbLogsFiltroAcao(e.target.value)} style={{...SI,width:"100%"}}>
-                  <option value="todos">Todas as ações</option>
-                  {fbLogsAcoesUnicas.map(a=><option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-              <div style={{flex:1,minWidth:140}}>
-                <label style={SL}>Usuário</label>
-                <select value={fbLogsFiltroUser} onChange={e=>setFbLogsFiltroUser(e.target.value)} style={{...SI,width:"100%"}}>
-                  <option value="todos">Todos</option>
-                  {fbLogsUsersUnicos.map(u=><option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-              <div style={{fontSize:11,color:"#aaa",marginTop:16}}>
-                {fbLogsLoading ? "⏳ Carregando..." : `${fbLogsFiltrados.length} registro(s) de ${fbLogs.length} total`}
-              </div>
-              <button onClick={()=>setTab("auditoria")}
-                style={{marginTop:16,padding:"6px 12px",borderRadius:8,border:"1px solid #3b9de8",background:"transparent",color:"#3b9de8",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
-                🔄 Recarregar
-              </button>
+        {/* ═══ DASHBOARD ═══ */}
+        {tab==="dashboard"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+              <StatCard icon="🔓" label="Logins" val={stats.logins} c={AD.gr} sub={`${users.length} usuário(s)`}/>
+              <StatCard icon="⛔" label="Falhas acesso" val={stats.erros} c={stats.erros>0?AD.re:AD.gr} sub="Login incorreto"/>
+              <StatCard icon="👤" label="Pacientes criados" val={stats.pacCriados} c={AD.p} sub={`${stats.pacExclui} excluído(s)`}/>
+              <StatCard icon="🔬" label="Exames" val={stats.exCriados} c={AD.cy} sub={`${stats.exExclui} excluído(s)`}/>
+              <StatCard icon="📄" label="Atos clínicos" val={stats.clinicos} c={AD.pu} sub="Anamneses+atestados"/>
+              <StatCard icon="⬇️" label="Downloads" val={stats.downloads} c={AD.am} sub={`${stats.backups} backup(s)`}/>
+              <StatCard icon="🖼️" label="Fotos" val={stats.fotos} c={AD.cy} sub="Upload imagens"/>
+              <StatCard icon="❗" label="Erros sistema" val={stats.errsSist} c={stats.errsSist>0?AD.re:AD.gr} sub="Runtime errors"/>
             </div>
-
-            {/* Cards de resumo */}
-            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-              {[
-                {label:"Total",        val:fbLogs.length,                                                  c:"#3b9de8"},
-                {label:"Logins OK",    val:fbLogs.filter(l=>l.a==="LOGIN").length,                         c:"#6fcf97"},
-                {label:"Erros",        val:fbLogs.filter(l=>l.a==="LOGIN_ERRO"||l.a==="ACESSO_NEGADO").length, c:"#f87171"},
-                {label:"Prontuários",  val:fbLogs.filter(l=>l.a==="ANAMNESE_CRIADA"||l.a==="ATESTADO_CRIADO").length, c:"#c084fc"},
-                {label:"Backups",      val:fbLogs.filter(l=>l.a==="BACKUP_GERADO").length,                 c:"#fbbf24"},
-              ].map(s=>(
-                <div key={s.label} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}>
-                  <div style={{fontSize:20,fontWeight:800,color:s.c}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"rgba(200,220,240,.6)"}}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {fbLogsLoading ? (
-              <div style={{textAlign:"center",padding:40,color:"rgba(200,220,240,.5)"}}>⏳ Carregando logs do Firebase...</div>
-            ) : fbLogsFiltrados.length===0 ? (
-              <div style={{textAlign:"center",padding:40,color:"rgba(200,220,240,.4)"}}>
-                <div style={{fontSize:32,marginBottom:8}}>🔐</div>
-                <div>Nenhum log encontrado</div>
-                <div style={{fontSize:11,marginTop:4}}>Os logs aparecem após login/ações no sistema</div>
-              </div>
-            ) : (
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {fbLogsFiltrados.map((l,i)=>{
-                  const ac = l.a==="LOGIN"?"#6fcf97":l.a==="LOGIN_ERRO"||l.a==="ACESSO_NEGADO"?"#f87171":l.a==="BACKUP_GERADO"?"#fbbf24":l.a==="ANAMNESE_CRIADA"||l.a==="ATESTADO_CRIADO"?"#c084fc":"#3b9de8";
-                  return (
-                    <div key={i} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"10px 14px",background:"rgba(255,255,255,.04)",borderRadius:10,border:`1px solid ${ac}20`,borderLeft:`3px solid ${ac}`}}>
-                      <div style={{fontFamily:"monospace",fontSize:10,color:"rgba(200,220,240,.45)",whiteSpace:"nowrap",minWidth:130}}>{l.tsBR||l.ts?.slice(0,16)}</div>
-                      <div style={{minWidth:90}}>
-                        <span style={{background:`${ac}20`,color:ac,padding:"2px 8px",borderRadius:99,fontSize:9,fontWeight:800}}>{l.a}</span>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:12,padding:16}}>
+                <div style={{fontSize:12,fontWeight:800,color:AD.tx,marginBottom:12}}>⚡ Atividade em tempo real</div>
+                {allLogs.length===0?<div style={{textAlign:"center",padding:"20px 0",color:AD.txS,fontSize:11}}>Nenhuma atividade ainda</div>:(
+                  <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:280,overflowY:"auto"}}>
+                    {allLogs.slice(0,20).map((l,i)=>{const m=ameta(l.a);return(
+                      <div key={i} style={{display:"flex",gap:7,alignItems:"center",padding:"5px 8px",borderRadius:7,background:"rgba(255,255,255,.03)"}}>
+                        <span style={{fontSize:12,flexShrink:0}}>{m.icon}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:10,fontWeight:700,color:m.c}}>{m.label}</div>
+                          <div style={{fontSize:9,color:AD.txS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.u}{l.d?` · ${l.d.slice(0,40)}`:""}</div>
+                        </div>
+                        <div style={{fontSize:9,color:AD.txS,fontFamily:"monospace",flexShrink:0}}>{(l.tsBR||l.ts||"").slice(-8,-3)||"—"}</div>
                       </div>
-                      <div style={{fontSize:12,color:"#e2e8f0",fontWeight:600,minWidth:80}}>{l.u}</div>
-                      <div style={{fontSize:11,color:"rgba(200,220,240,.6)",flex:1,wordBreak:"break-all"}}>{l.d}</div>
-                      {l.ua&&<div style={{fontSize:9,color:"rgba(200,220,240,.3)",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={l.ua}>📱 {l.ua.includes("Mobile")?"Mobile":"Desktop"}</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <p style={{fontSize:10,color:"rgba(200,220,240,.35)",marginTop:12,textAlign:"center"}}>
-              🔒 Logs armazenados no Firebase (append-only) · Não podem ser alterados retroativamente · Últimos 500 registros exibidos
-            </p>
-          </div>
-        )}
-
-        {/* ── ABA LGPD ── */}
-        {tab==="lgpd"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(59,157,232,.3)",borderRadius:14,padding:"18px 20px"}}>
-              <div style={{fontSize:15,fontWeight:800,color:"#fff",marginBottom:4}}>⚖️ LGPD — Lei Geral de Proteção de Dados</div>
-              <div style={{fontSize:12,color:"rgba(200,220,240,.6)",lineHeight:1.7}}>
-                Lei nº 13.709/2018 · Vigente desde setembro de 2020 · Aplicável a dados de pacientes
-              </div>
-            </div>
-
-            {/* Checklist LGPD */}
-            {[
-              {ok:true,  item:"Dados armazenados em servidor brasileiro (Firebase GCP us-central1)", nota:""},
-              {ok:true,  item:"HTTPS obrigatório em todas as comunicações", nota:"Vercel SSL automático"},
-              {ok:true,  item:"Autenticação com senha antes de acessar dados", nota:"Login obrigatório"},
-              {ok:true,  item:"Log de auditoria de todos os acessos", nota:"Registrado no Firebase"},
-              {ok:true,  item:"Imutabilidade de registros médicos (prontuários)", nota:"Campo locked:true + hash"},
-              {ok:true,  item:"Encarregado de Dados (DPO) formalmente designado", nota:"Dra. Ilza Ezequiel — privacidade@drailzaezequiel.com.br · Versão 1.0"},
-              {ok:true,  item:"Política de Privacidade publicada e aceita pelos pacientes", nota:"Documento v1.0 gerado · Aceite bloqueante na Sala Virtual · E-mail LGPD automático no cadastro"},
-              {ok:true,  item:"Consentimento do paciente registrado no cadastro", nota:"Step LGPD na Sala Virtual (obrigatório) + campo de aceite no CRM com timestamp e trilha Firebase"},
-              {ok:false, item:"Relatório de Impacto à Proteção de Dados (RIPD)", nota:"Necessário para clínicas — documento formal, geralmente jurídico"},
-              {ok:false, item:"Certificado digital ICP-Brasil para assinatura de documentos", nota:"Necessário para prontuário 100% digital — dispensável com papel"},
-              {ok:false, item:"Prazo de guarda de dados: mínimo 20 anos (CFM)", nota:"Firebase Spark não garante — migrar para Blaze com export automático"},
-            ].map((r,i)=>(
-              <div key={i} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"12px 16px",background:"rgba(255,255,255,.04)",borderRadius:10,border:`1px solid ${r.ok?"rgba(111,207,151,.2)":"rgba(248,113,113,.15)"}`}}>
-                <span style={{fontSize:18,flexShrink:0}}>{r.ok?"✅":"⚠️"}</span>
-                <div>
-                  <div style={{fontSize:13,fontWeight:600,color:r.ok?"#6fcf97":"#fbbf24"}}>{r.item}</div>
-                  {r.nota&&<div style={{fontSize:11,color:"rgba(200,220,240,.5)",marginTop:3}}>{r.nota}</div>}
-                </div>
-              </div>
-            ))}
-
-            <div style={{background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.25)",borderRadius:12,padding:"14px 18px",fontSize:12,color:"rgba(251,191,36,.9)",lineHeight:1.8}}>
-              <strong>📌 Para consultório individual (Dra. Ilza como autônoma):</strong><br/>
-              A LGPD é mais simples: basta ter política de privacidade, consentimento do paciente e nomear DPO (pode ser você mesma). O RIPD é exigido apenas quando o tratamento de dados pode gerar riscos significativos — consulte um advogado especialista em LGPD na saúde.
-            </div>
-          </div>
-        )}
-
-        {/* ── ABA BACKUP ── */}
-        {tab==="backup"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(59,157,232,.3)",borderRadius:14,padding:"18px 20px"}}>
-              <div style={{fontSize:15,fontWeight:800,color:"#fff",marginBottom:4}}>💾 Backup dos Dados</div>
-              <div style={{fontSize:12,color:"rgba(200,220,240,.6)",lineHeight:1.7}}>
-                Exporta todos os dados do Firebase em formato JSON. Salve em local seguro (Google Drive, HD externo).
-              </div>
-            </div>
-
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <button onClick={gerarBackup}
-                style={{display:"flex",alignItems:"center",gap:14,padding:"20px 24px",background:"linear-gradient(135deg,#1a5fa8,#0d2137)",border:"1px solid rgba(59,157,232,.4)",borderRadius:14,cursor:"pointer",fontFamily:"inherit",color:"#fff",textAlign:"left",width:"100%"}}>
-                <span style={{fontSize:32}}>📦</span>
-                <div>
-                  <div style={{fontSize:14,fontWeight:800}}>Backup Completo Agora</div>
-                  <div style={{fontSize:11,color:"rgba(200,220,240,.6)",marginTop:2}}>Inclui pacientes, consultas, exames, estoque, agenda e logs de auditoria</div>
-                </div>
-                <span style={{marginLeft:"auto",fontSize:20}}>⬇️</span>
-              </button>
-
-              {/* Instruções backup automático */}
-              <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:12,padding:"16px 18px"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#fbbf24",marginBottom:10}}>🔄 Backup Automático — Como Configurar</div>
-                {[
-                  ["1️⃣","Acesse console.firebase.google.com → seu projeto"],
-                  ["2️⃣","Upgrade para plano Blaze (gratuito até o limite, cobra só excedente)"],
-                  ["3️⃣","Vá em Realtime Database → Backups → Ativar backup automático"],
-                  ["4️⃣","Configure: diário às 3h00, retenção 30 dias"],
-                  ["5️⃣","Para o CRM funcionar 20 anos: exporte 1x/ano para Google Drive"],
-                ].map(([n,t])=>(
-                  <div key={n} style={{display:"flex",gap:10,marginBottom:8,fontSize:12,color:"rgba(200,220,240,.7)"}}>
-                    <span style={{flexShrink:0}}>{n}</span><span>{t}</span>
+                    );})}
                   </div>
-                ))}
+                )}
               </div>
-
-              {/* UptimeRobot — Widget real com API */}
-              <UptimeRobotWidget />
-            </div>
-          </div>
-        )}
-
-        {/* ── ABA LOGS ── */}
-        {tab==="logs"&&(
-          <div>
-            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-              <div>
-                <label style={SL}>Filtrar por Ação</label>
-                <select value={filtroAcao} onChange={e=>setFiltroAcao(e.target.value)} style={{...SI,width:180}}>
-                  <option value="todos">Todas as ações</option>
-                  {acoesUnicas.map(a=><option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={SL}>Filtrar por Usuário</label>
-                <select value={filtroUser} onChange={e=>setFiltroUser(e.target.value)} style={{...SI,width:180}}>
-                  <option value="todos">Todos os usuários</option>
-                  {usersLog.map(u=><option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-              <div style={{marginLeft:"auto",alignSelf:"flex-end"}}>
-                <span style={{color:C.txM,fontSize:11}}>{logsFiltered.length} evento(s)</span>
+              <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:12,padding:16}}>
+                <div style={{fontSize:12,fontWeight:800,color:AD.tx,marginBottom:12}}>🚨 Alertas críticos</div>
+                {criticas.length===0?<div style={{textAlign:"center",padding:"20px 0",color:AD.gr,fontSize:11}}>✅ Nenhum evento crítico</div>:(
+                  <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:280,overflowY:"auto"}}>
+                    {criticas.map((l,i)=>{const m=ameta(l.a);return(
+                      <div key={i} style={{display:"flex",gap:7,padding:"7px 10px",borderRadius:8,background:`${m.c}08`,border:`1px solid ${m.c}22`,alignItems:"flex-start"}}>
+                        <span style={{fontSize:12,flexShrink:0}}>{m.icon}</span>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:10,fontWeight:700,color:m.c}}>{m.label}</div>
+                          <div style={{fontSize:9,color:AD.txM}}>{l.u}{l.d?` · ${l.d.slice(0,50)}`:""}</div>
+                        </div>
+                        <div style={{fontSize:9,color:AD.txS,fontFamily:"monospace",flexShrink:0}}>{(l.tsBR||l.ts||"").slice(0,14)}</div>
+                      </div>
+                    );})}
+                  </div>
+                )}
               </div>
             </div>
-            {logsFiltered.length===0&&(
-              <div style={{textAlign:"center",padding:48,color:C.txM}}>
-                <p style={{fontSize:36,marginBottom:8}}>📋</p>
-                <p style={{fontSize:13}}>Nenhum evento registrado nesta sessão ainda.<br/>Os logs aparecem em tempo real conforme o uso do sistema.</p>
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:12,padding:16}}>
+              <div style={{fontSize:12,fontWeight:800,color:AD.tx,marginBottom:12}}>🏅 Usuários mais ativos</div>
+              {topUsers.length===0?<div style={{color:AD.txS,fontSize:11,textAlign:"center"}}>Sem dados ainda</div>:(
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {topUsers.map(([nome,count])=>{
+                    const pct=Math.round((count/Math.max(allLogs.length,1))*100)||1;
+                    const u=users.find(x=>x.nome===nome)||{};
+                    const cor=u.role==="admin"?AD.re:u.role==="medico"?AD.p:AD.am;
+                    return(
+                      <div key={nome} style={{display:"flex",gap:10,alignItems:"center"}}>
+                        <div style={{width:26,height:26,borderRadius:7,background:`${cor}20`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:cor,flexShrink:0}}>{nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()}</div>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                            <span style={{fontSize:11,fontWeight:600,color:AD.tx}}>{nome}</span>
+                            <span style={{fontSize:10,color:AD.txM}}>{count} ({pct}%)</span>
+                          </div>
+                          <div style={{height:4,background:"rgba(255,255,255,.08)",borderRadius:99,overflow:"hidden"}}>
+                            <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${cor},${cor}88)`,borderRadius:99}}/>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {(stats.erros>3||stats.errsSist>0||stats.pacExclui>0)&&(
+              <div style={{background:"rgba(239,68,68,.06)",border:`1px solid ${AD.reBd}`,borderRadius:12,padding:14}}>
+                <div style={{fontSize:12,fontWeight:800,color:AD.re,marginBottom:8}}>🔔 Alertas inteligentes</div>
+                {stats.erros>3&&<div style={{fontSize:11,color:"#fca5a5",marginBottom:4}}>⚠️ {stats.erros} tentativas de login falho — verifique acesso suspeito</div>}
+                {stats.errsSist>0&&<div style={{fontSize:11,color:"#fca5a5",marginBottom:4}}>❗ {stats.errsSist} erro(s) de sistema — verifique aba Histórico</div>}
+                {stats.pacExclui>0&&<div style={{fontSize:11,color:"#fcd34d"}}>🗑️ {stats.pacExclui} paciente(s) excluído(s) — confirme se foi intencional</div>}
               </div>
             )}
-            {logsFiltered.map((l,i)=>{
-              const cor=ACOES_CORES[l.a]||C.p;
-              const isErro=l.a==="LOGIN_ERRO"||l.a==="ACESSO_NEGADO";
-              return(
-                <div key={i} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 14px",background:isErro?"rgba(192,57,43,.04)":C.card,borderRadius:10,marginBottom:6,border:`1px solid ${isErro?"rgba(192,57,43,.2)":C.brd}`,borderLeft:`3px solid ${cor}`}}>
-                  <div style={{width:8,height:8,borderRadius:"50%",background:cor,flexShrink:0}}/>
-                  <span style={{color:C.txM,fontSize:11,minWidth:155,flexShrink:0}}>{l.ts}</span>
-                  <span style={{background:`${cor}15`,color:cor,border:`1px solid ${cor}30`,padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700,minWidth:130,textAlign:"center",flexShrink:0}}>{l.a}</span>
-                  <span style={{color:C.tx,fontWeight:600,fontSize:12,minWidth:130,flexShrink:0}}>{l.u}</span>
-                  {l.d&&<span style={{color:C.txM,fontSize:11,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.d}</span>}
-                </div>
-              );
-            })}
           </div>
         )}
 
-        {/* ── ABA USUÁRIOS ── */}
+        {/* ═══ HISTÓRICO ═══ */}
+        {tab==="historico"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:"10px 14px",display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div style={{flex:"1 1 150px"}}>
+                <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",display:"block",marginBottom:4}}>🔍 Buscar</label>
+                <input value={fbLogsBusca} onChange={e=>{setFbLogsBusca(e.target.value);setFbLogsPage(1);}} placeholder="usuário, ação, detalhe..." style={{width:"100%",background:"rgba(255,255,255,.06)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"7px 10px",color:AD.tx,fontSize:11,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{flex:"1 1 110px"}}>
+                <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Categoria</label>
+                <select value={filtroCat} onChange={e=>{setFiltroCat(e.target.value);setFbLogsPage(1);}} style={{width:"100%",background:"rgba(255,255,255,.06)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"7px",color:AD.tx,fontSize:11,outline:"none",fontFamily:"inherit"}}>
+                  {CATS_FILTRO.map(c=><option key={c} value={c} style={{background:"#1a2d42"}}>{c==="todos"?"Todas":c}</option>)}
+                </select>
+              </div>
+              <div style={{flex:"1 1 130px"}}>
+                <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Ação</label>
+                <select value={fbLogsFiltroAcao} onChange={e=>{setFbLogsFiltroAcao(e.target.value);setFbLogsPage(1);}} style={{width:"100%",background:"rgba(255,255,255,.06)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"7px",color:AD.tx,fontSize:11,outline:"none",fontFamily:"inherit"}}>
+                  <option value="todos" style={{background:"#1a2d42"}}>Todas as ações</option>
+                  {fbLogsAcoesUnicas.map(a=><option key={a} value={a} style={{background:"#1a2d42"}}>{ameta(a).icon} {ameta(a).label}</option>)}
+                </select>
+              </div>
+              <div style={{flex:"1 1 110px"}}>
+                <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Usuário</label>
+                <select value={fbLogsFiltroUser} onChange={e=>{setFbLogsFiltroUser(e.target.value);setFbLogsPage(1);}} style={{width:"100%",background:"rgba(255,255,255,.06)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"7px",color:AD.tx,fontSize:11,outline:"none",fontFamily:"inherit"}}>
+                  <option value="todos" style={{background:"#1a2d42"}}>Todos</option>
+                  {fbLogsUsersUnicos.map(u=><option key={u} value={u} style={{background:"#1a2d42"}}>{u}</option>)}
+                </select>
+              </div>
+              <div style={{flex:"1 1 100px"}}>
+                <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Período</label>
+                <select value={fbLogsFiltroData} onChange={e=>{setFbLogsFiltroData(e.target.value);setFbLogsPage(1);}} style={{width:"100%",background:"rgba(255,255,255,.06)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"7px",color:AD.tx,fontSize:11,outline:"none",fontFamily:"inherit"}}>
+                  {[["todos","Tudo"],["hoje","Hoje"],["semana","7 dias"],["mes","30 dias"]].map(([v,l])=><option key={v} value={v} style={{background:"#1a2d42"}}>{l}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{setFbLogsFiltroAcao("todos");setFbLogsFiltroUser("todos");setFiltroCat("todos");setFbLogsFiltroData("todos");setFbLogsBusca("");setFbLogsPage(1);}} style={{padding:"7px 10px",borderRadius:7,border:`1px solid ${AD.brd}`,background:"transparent",color:AD.txM,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Limpar</button>
+                <button onClick={()=>{setFbLogsPage(1);carregarFbLogs();}} style={{padding:"7px 12px",borderRadius:7,border:`1px solid ${AD.p}`,background:`${AD.p}18`,color:AD.p,fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔄</button>
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:11,color:AD.txS}}>{fbLogsLoading?"⏳ Carregando...":`${fbLogsFiltrados.length} de ${fbLogs.length} registros`}</span>
+              <span style={{fontSize:10,color:AD.txS}}>Pág. {fbLogsPage}/{fbLogsPages}</span>
+            </div>
+            {fbLogsLoading?<div style={{textAlign:"center",padding:40,color:AD.txS}}>⏳ Carregando Firebase...</div>
+            :fbLogsPaged.length===0?<div style={{textAlign:"center",padding:40,color:AD.txS}}><div style={{fontSize:28,marginBottom:8}}>🔍</div>Nenhum registro</div>
+            :<div style={{paddingLeft:2}}>{fbLogsPaged.map((l,i)=><TimelineRow key={i} l={l} index={i}/>)}</div>}
+            {fbLogsPages>1&&(
+              <div style={{display:"flex",gap:4,justifyContent:"center",paddingTop:4}}>
+                <button disabled={fbLogsPage===1} onClick={()=>setFbLogsPage(p=>p-1)} style={{padding:"5px 12px",borderRadius:7,border:`1px solid ${AD.brd}`,background:"transparent",color:fbLogsPage===1?AD.txS:AD.p,cursor:fbLogsPage===1?"not-allowed":"pointer",fontSize:11,fontFamily:"inherit"}}>←</button>
+                {Array.from({length:Math.min(fbLogsPages,7)},(_,i)=><button key={i+1} onClick={()=>setFbLogsPage(i+1)} style={{padding:"5px 9px",borderRadius:7,border:`1px solid ${fbLogsPage===i+1?AD.p:AD.brd}`,background:fbLogsPage===i+1?`${AD.p}25`:"transparent",color:fbLogsPage===i+1?AD.p:AD.txM,fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:fbLogsPage===i+1?700:400}}>{i+1}</button>)}
+                <button disabled={fbLogsPage===fbLogsPages} onClick={()=>setFbLogsPage(p=>p+1)} style={{padding:"5px 12px",borderRadius:7,border:`1px solid ${AD.brd}`,background:"transparent",color:fbLogsPage===fbLogsPages?AD.txS:AD.p,cursor:fbLogsPage===fbLogsPages?"not-allowed":"pointer",fontSize:11,fontFamily:"inherit"}}>→</button>
+              </div>
+            )}
+            <p style={{fontSize:9,color:AD.txS,textAlign:"center"}}>🔒 Logs imutáveis · Firebase append-only · Máx. 1.000 registros</p>
+          </div>
+        )}
+
+        {/* ═══ USUÁRIOS ═══ */}
         {tab==="usuarios"&&(
           <div>
-            {/* Confirm delete */}
-            {confirmDel&&(
-              <ConfirmPopup danger title={`Excluir usuário @${confirmDel.u}?`} msg={`Esta ação removerá o acesso de "${confirmDel.nome}" permanentemente.`} yesLabel="🗑️ Excluir" noLabel="Cancelar" onYes={()=>excluirUsuario(confirmDel)} onNo={()=>setConfirmDel(null)}/>
-            )}
-
-            {/* Botão criar */}
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
-              <Btn v="p" sm onClick={()=>setShowNovoUser(p=>!p)}>➕ Novo Usuário</Btn>
+            {confirmDel&&<ConfirmPopup danger title={`Excluir @${confirmDel.u}?`} msg={`Remove "${confirmDel.nome}" permanentemente.`} yesLabel="🗑️ Excluir" noLabel="Cancelar" onYes={()=>excluirUsuario(confirmDel)} onNo={()=>setConfirmDel(null)}/>}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={{fontSize:13,fontWeight:800,color:AD.tx}}>👥 Usuários ({users.length})</div>
+              <button onClick={()=>setShowNovoUser(p=>!p)} style={{padding:"7px 14px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#1a5fa8,#3b9de8)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>➕ Novo Usuário</button>
             </div>
-
-            {/* Formulário de criação */}
             {showNovoUser&&(
-              <div style={{background:C.card,border:`1.5px solid ${C.p}40`,borderRadius:14,padding:20,marginBottom:20,borderTop:`3px solid ${C.p}`}}>
-                <p style={{color:C.p,fontWeight:800,fontSize:14,margin:"0 0 16px"}}>➕ Criar Novo Usuário</p>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                  <div><label style={SL}>Nome completo</label><input value={novoForm.nome} onChange={e=>setNovoForm(p=>({...p,nome:e.target.value}))} placeholder="Ex: Ana Paula" style={SI}/></div>
-                  <div><label style={SL}>Login (usuário)</label><input value={novoForm.u} onChange={e=>setNovoForm(p=>({...p,u:e.target.value}))} placeholder="Ex: anapaula" style={SI}/></div>
-                  <div><label style={SL}>E-mail</label><input type="email" value={novoForm.email} onChange={e=>setNovoForm(p=>({...p,email:e.target.value}))} placeholder="usuario@drailza.com.br" style={SI}/></div>
-                  <div><label style={SL}>Perfil (role)</label>
-                    <select value={novoForm.role} onChange={e=>setNovoForm(p=>({...p,role:e.target.value}))} style={SI}>
-                      {["admin","medico","recepcao","atendente"].map(r=><option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </div>
+              <div style={{background:AD.card,border:`1.5px solid ${AD.p}40`,borderRadius:12,padding:18,marginBottom:16,borderTop:`3px solid ${AD.p}`}}>
+                <div style={{fontSize:13,fontWeight:800,color:AD.p,marginBottom:14}}>➕ Criar Novo Usuário</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                  {[["Nome completo","nome","text","Ex: Ana Paula"],["Login","u","text","Ex: anapaula"],["E-mail","email","email","usuario@drailza.com.br"]].map(([lb,k,tp,ph])=>(
+                    <div key={k}><label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>{lb}</label>
+                      <input type={tp} value={novoForm[k]} onChange={e=>setNovoForm(p=>({...p,[k]:e.target.value}))} placeholder={ph} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+                  ))}
+                  <div><label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Perfil</label>
+                    <select value={novoForm.role} onChange={e=>setNovoForm(p=>({...p,role:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit"}}>
+                      {[["admin","🔴 Admin"],["medico","🔵 Médico"],["recepcao","🟡 Recepção"],["atendente","🟢 Atendente"]].map(([v,l])=><option key={v} value={v} style={{background:"#1a2d42"}}>{l}</option>)}</select></div>
                 </div>
-                <div style={{marginBottom:14}}>
-                  <label style={SL}>Senha inicial</label>
-                  <input type="password" value={novoForm.s} onChange={e=>setNovoForm(p=>({...p,s:e.target.value}))} placeholder="Mínimo 6 caracteres" style={SI}/>
+                <div style={{marginBottom:12}}>
+                  <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Senha inicial</label>
+                  <input type="password" value={novoForm.s} onChange={e=>setNovoForm(p=>({...p,s:e.target.value}))} placeholder="Mín. 8 chars · Maiúsculas + Números" style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
                 </div>
-                {novoMsg.text&&<div style={{background:novoMsg.ok?`${C.green}10`:"rgba(192,57,43,.08)",border:`1px solid ${novoMsg.ok?C.green:C.red}33`,borderRadius:8,padding:"9px 14px",color:novoMsg.ok?C.green:C.red,fontSize:12,marginBottom:12}}>{novoMsg.text}</div>}
-                <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                  <Btn v="g" onClick={()=>{setShowNovoUser(false);setNovoForm({nome:"",u:"",email:"",s:"",role:"recepcao"});}}>Cancelar</Btn>
-                  <Btn v="p" onClick={criarUsuario}>✅ Criar Usuário</Btn>
+                {novoMsg.text&&<div style={{background:novoMsg.ok?"rgba(34,197,94,.1)":"rgba(239,68,68,.1)",border:`1px solid ${novoMsg.ok?AD.gr:AD.re}33`,borderRadius:7,padding:"8px 12px",color:novoMsg.ok?AD.gr:AD.re,fontSize:11,marginBottom:10}}>{novoMsg.text}</div>}
+                <div style={{display:"flex",gap:7,justifyContent:"flex-end"}}>
+                  <button onClick={()=>{setShowNovoUser(false);setNovoForm({nome:"",u:"",email:"",s:"",role:"recepcao"});}} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${AD.brd}`,background:"transparent",color:AD.txM,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+                  <button onClick={criarUsuario} style={{padding:"7px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#1a5fa8,#3b9de8)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✅ Criar</button>
                 </div>
               </div>
             )}
-
             {editUser&&(
-              <div style={{background:C.card,border:`1px solid ${C.brd}`,borderRadius:14,padding:20,marginBottom:20,borderTop:`3px solid ${C.p}`}}>
-                <p style={{color:C.tx,fontWeight:700,fontSize:14,margin:"0 0 16px"}}>✏️ Editar — {editUser.nome}</p>
-                {[["Nome",editForm.nome||"","nome"],["Login (usuário)",editForm.u||"","u"],["E-mail",editForm.email||"","email"]].map(([lb,val,k])=>(
-                  <div key={k} style={{marginBottom:12}}>
-                    <label style={SL}>{lb}</label>
-                    <input value={val} onChange={e=>setEditForm(p=>({...p,[k]:e.target.value}))} style={SI} type={k==="email"?"email":"text"} placeholder={k==="email"?"usuario@drailza.com.br":undefined}/>
-                  </div>
-                ))}
+              <div style={{background:AD.card,border:`1.5px solid ${AD.am}50`,borderRadius:12,padding:18,marginBottom:16,borderTop:`3px solid ${AD.am}`}}>
+                <div style={{fontSize:13,fontWeight:800,color:AD.am,marginBottom:14}}>✏️ Editar — {editUser.nome}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                  {[["Nome","nome","text"],["Login","u","text"],["E-mail","email","email"]].map(([lb,k,tp])=>(
+                    <div key={k}><label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>{lb}</label>
+                      <input type={tp} value={editForm[k]||""} onChange={e=>setEditForm(p=>({...p,[k]:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+                  ))}
+                  <div><label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Perfil</label>
+                    <select value={editForm.role||"recepcao"} onChange={e=>setEditForm(p=>({...p,role:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit"}}>
+                      {[["admin","🔴 Admin"],["medico","🔵 Médico"],["recepcao","🟡 Recepção"],["atendente","🟢 Atendente"]].map(([v,l])=><option key={v} value={v} style={{background:"#1a2d42"}}>{l}</option>)}</select></div>
+                </div>
                 <div style={{marginBottom:12}}>
-                  <label style={SL}>Perfil (role)</label>
-                  <select value={editForm.role||""} onChange={e=>setEditForm(p=>({...p,role:e.target.value}))} style={SI}>
-                    {["admin","medico","recepcao","atendente"].map(r=><option key={r} value={r}>{r}</option>)}
-                  </select>
+                  <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Nova senha (vazio = manter)</label>
+                  <input type="password" placeholder="••••••••" onChange={e=>setEditForm(p=>({...p,s:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
                 </div>
-                <div style={{marginBottom:16}}>
-                  <label style={SL}>Nova Senha (deixe vazio para manter)</label>
-                  <input type="password" placeholder="••••••••" onChange={e=>setEditForm(p=>({...p,s:e.target.value}))} style={SI}/>
-                </div>
-                {senhaMsg.text&&<div style={{background:senhaMsg.ok?`${C.p}10`:"rgba(192,57,43,.08)",border:`1px solid ${senhaMsg.ok?C.p:C.red}33`,borderRadius:8,padding:"9px 14px",color:senhaMsg.ok?C.p:C.red,fontSize:12,marginBottom:12}}>{senhaMsg.text}</div>}
-                <div style={{display:"flex",gap:8}}>
-                  <Btn v="g" onClick={()=>setEditUser(null)}>Cancelar</Btn>
-                  <Btn v="p" onClick={saveEditUser}>✅ Salvar</Btn>
+                {senhaMsg.text&&<div style={{background:senhaMsg.ok?"rgba(34,197,94,.1)":"rgba(239,68,68,.1)",border:`1px solid ${senhaMsg.ok?AD.gr:AD.re}33`,borderRadius:7,padding:"8px 12px",color:senhaMsg.ok?AD.gr:AD.re,fontSize:11,marginBottom:10}}>{senhaMsg.text}</div>}
+                <div style={{display:"flex",gap:7,justifyContent:"flex-end"}}>
+                  <button onClick={()=>setEditUser(null)} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${AD.brd}`,background:"transparent",color:AD.txM,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+                  <button onClick={saveEditUser} style={{padding:"7px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#A8722A,#7A5018)",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✅ Salvar</button>
                 </div>
               </div>
             )}
             {users.map(u=>{
-              const cor=u.role==="admin"?C.red:u.role==="medico"?C.p:C.gold;
-              const logsU=logsAll.filter(l=>l.u===u.nome);
+              const cor=u.role==="admin"?AD.re:u.role==="medico"?AD.p:AD.am;
+              const logsU=allLogs.filter(l=>l.u===u.nome);
               const ultLog=logsU[0];
               return(
-                <div key={u.id} style={{background:C.card,border:`1px solid ${C.brd}`,borderRadius:12,padding:"14px 18px",marginBottom:10,display:"flex",alignItems:"center",gap:14}}>
-                  <div style={{width:44,height:44,borderRadius:12,background:`${cor}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:cor,flexShrink:0}}>{initials(u.nome)}</div>
+                <div key={u.id} style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:10,background:`${cor}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:cor,flexShrink:0}}>{u.nome.split(" ").map(x=>x[0]).slice(0,2).join("").toUpperCase()}</div>
                   <div style={{flex:1}}>
-                    <p style={{color:C.tx,fontWeight:700,fontSize:13,margin:0}}>{u.nome}</p>
-                    <p style={{color:C.txM,fontSize:11,margin:"2px 0 4px"}}>@{u.u}{u.email&&<span style={{marginLeft:8,color:C.txM}}>· {u.email}</span>}</p>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      <Bdg c={cor}>{u.role}</Bdg>
-                      {ultLog&&<span style={{color:C.txM,fontSize:10}}>Último: {ultLog.ts} — {ultLog.a}</span>}
-                      <span style={{color:C.txM,fontSize:10}}>{logsU.length} eventos</span>
+                    <div style={{color:AD.tx,fontWeight:700,fontSize:12}}>{u.nome}</div>
+                    <div style={{color:AD.txM,fontSize:10,marginTop:1}}>@{u.u}{u.email&&<span> · {u.email}</span>}</div>
+                    <div style={{display:"flex",gap:6,marginTop:4,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{background:`${cor}18`,color:cor,border:`1px solid ${cor}30`,padding:"1px 7px",borderRadius:99,fontSize:9,fontWeight:700,textTransform:"uppercase"}}>{u.role}</span>
+                      <span style={{color:AD.txS,fontSize:9}}>{logsU.length} ações</span>
+                      {ultLog&&<span style={{color:AD.txS,fontSize:9}}>Último: {(ultLog.tsBR||ultLog.ts||"").slice(0,16)}</span>}
                     </div>
                   </div>
-                  <div style={{display:"flex",gap:6}}>
-                    <Btn v="blue" sm onClick={()=>{setEditUser(u);setEditForm({nome:u.nome,u:u.u,role:u.role,s:"",email:u.email||""});}}>✏️ Editar</Btn>
-                    {u.id!==usuario.id&&<Btn v="red" sm onClick={()=>setConfirmDel(u)}>🗑️</Btn>}
+                  <div style={{display:"flex",gap:5}}>
+                    <button onClick={()=>{setEditUser(u);setEditForm({nome:u.nome,u:u.u,role:u.role,s:"",email:u.email||""});}} style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${AD.brd}`,background:"transparent",color:AD.txM,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
+                    {u.id!==usuario.id&&<button onClick={()=>setConfirmDel(u)} style={{padding:"5px 8px",borderRadius:7,border:`1px solid ${AD.reBd}`,background:"rgba(239,68,68,.08)",color:AD.re,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
                   </div>
                 </div>
               );
             })}
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:14,marginTop:8}}>
+              <div style={{fontSize:12,fontWeight:700,color:AD.tx,marginBottom:10}}>🔐 Permissões por Perfil</div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr>{["Módulo","Admin","Médico","Recepção","Atendente"].map(h=><th key={h} style={{padding:"6px 8px",color:AD.txS,fontWeight:700,textTransform:"uppercase",letterSpacing:".06em",borderBottom:`1px solid ${AD.brd}`,textAlign:"left"}}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {[["Pacientes (ver)","✅","✅","✅","✅"],["Pacientes (editar)","✅","✅","✅","❌"],["Pacientes (excluir)","✅","❌","❌","❌"],["Prontuário/Anamnese","✅","✅","❌","❌"],["Exames (ver)","✅","✅","✅","✅"],["Exames (criar/editar)","✅","✅","✅","❌"],["Financeiro","✅","❌","✅","❌"],["Estoque","✅","❌","✅","✅"],["Sala Virtual","✅","✅","✅","❌"],["Painel Admin","✅","❌","❌","❌"],["Backup/Logs","✅","❌","❌","❌"]].map(([mod,...perms])=>(
+                      <tr key={mod} style={{borderBottom:`1px solid ${AD.brd}`}}>
+                        <td style={{padding:"6px 8px",color:AD.txM,fontWeight:600}}>{mod}</td>
+                        {perms.map((p,i)=><td key={i} style={{padding:"6px 8px",textAlign:"center",fontSize:12}}>{p}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* ── ABA SENHAS ── */}
+        {/* ═══ LGPD ═══ */}
+        {tab==="lgpd"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:AD.card,border:`1px solid ${AD.brdHi}`,borderRadius:12,padding:"16px 18px"}}>
+              <div style={{fontSize:14,fontWeight:800,color:AD.tx,marginBottom:4}}>⚖️ LGPD — Lei nº 13.709/2018</div>
+              <div style={{fontSize:11,color:AD.txM}}>Vigente desde 2020 · Aplicável a dados de saúde (Art. 11)</div>
+            </div>
+            {[
+              {ok:true, item:"Dados no Brasil (Firebase GCP us-central1)",nota:"Servidor nacional conforme LGPD"},
+              {ok:true, item:"HTTPS em todas as comunicações",nota:"Vercel SSL automático"},
+              {ok:true, item:"Autenticação com senha obrigatória"},
+              {ok:true, item:"Log de auditoria imutável",nota:"Firebase append-only — não pode ser alterado"},
+              {ok:true, item:"Consentimento do paciente com timestamp",nota:"Trilha Firebase"},
+              {ok:true, item:"DPO designado",nota:"privacidade@drailzaezequiel.com.br"},
+              {ok:false,item:"Relatório de Impacto (RIPD)",nota:"Documento jurídico formal obrigatório"},
+              {ok:false,item:"Certificado ICP-Brasil",nota:"Para prontuário 100% digital sem papel"},
+              {ok:false,item:"Guarda de 20 anos garantida (CFM)",nota:"Migrar Firebase para plano Blaze"},
+            ].map((r,i)=>(
+              <div key={i} style={{display:"flex",gap:10,padding:"10px 14px",background:AD.card,borderRadius:9,border:`1px solid ${r.ok?"rgba(34,197,94,.2)":"rgba(245,158,11,.15)"}`}}>
+                <span style={{flexShrink:0}}>{r.ok?"✅":"⚠️"}</span>
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:r.ok?AD.gr:AD.am}}>{r.item}</div>
+                  {r.nota&&<div style={{fontSize:10,color:AD.txS,marginTop:1}}>{r.nota}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ═══ BACKUP ═══ */}
+        {tab==="backup"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <button onClick={gerarBackup} disabled={backupLoading} style={{display:"flex",alignItems:"center",gap:14,padding:"18px 22px",background:"linear-gradient(135deg,#0d2137,#1a3550)",border:`1px solid ${AD.brdHi}`,borderRadius:12,cursor:backupLoading?"not-allowed":"pointer",fontFamily:"inherit",color:"#fff",textAlign:"left",width:"100%",opacity:backupLoading?.6:1,boxSizing:"border-box"}}>
+              <span style={{fontSize:32}}>{backupLoading?"⏳":"📦"}</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:800}}>{backupLoading?"Gerando...":"Backup Completo Agora"}</div>
+                <div style={{fontSize:11,color:"rgba(200,220,240,.6)",marginTop:2}}>Pacientes · Consultas · Exames · Estoque · Agenda · Logs</div>
+              </div>
+              <span style={{marginLeft:"auto",fontSize:18}}>⬇️</span>
+            </button>
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:14}}>
+              <div style={{fontSize:12,fontWeight:700,color:AD.am,marginBottom:8}}>🔄 Backup automático — Como configurar</div>
+              {[["1️⃣","console.firebase.google.com → seu projeto"],["2️⃣","Plano Blaze (paga só excedente)"],["3️⃣","Realtime Database → Backups → Ativar"],["4️⃣","Diário 03h · retenção 30 dias"],["5️⃣","1x/ano para Google Drive (CFM 20 anos)"]].map(([n,t])=>(
+                <div key={n} style={{display:"flex",gap:8,marginBottom:6,fontSize:11,color:AD.txM}}><span style={{flexShrink:0}}>{n}</span><span>{t}</span></div>
+              ))}
+            </div>
+            <UptimeRobotWidget/>
+          </div>
+        )}
+
+        {/* ═══ SENHAS ═══ */}
         {tab==="senhas"&&(
           <div>
-            <div style={{background:"rgba(192,57,43,.06)",border:"1.5px solid rgba(192,57,43,.3)",borderRadius:14,padding:16,marginBottom:20,display:"flex",gap:12,alignItems:"flex-start"}}>
-              <span style={{fontSize:24,flexShrink:0}}>⚠️</span>
+            <div style={{background:"rgba(239,68,68,.06)",border:`1.5px solid ${AD.reBd}`,borderRadius:12,padding:14,marginBottom:16,display:"flex",gap:10}}>
+              <span style={{fontSize:22,flexShrink:0}}>⚠️</span>
               <div>
-                <p style={{color:C.red,fontWeight:800,fontSize:13,margin:"0 0 4px"}}>Área Restrita — Senhas em Texto Plano</p>
-                <p style={{color:C.txS,fontSize:12,margin:0}}>Esta área exibe credenciais dos usuários. Acesso exclusivo ao administrador. Registrado em auditoria.</p>
+                <div style={{color:AD.re,fontWeight:800,fontSize:12,marginBottom:2}}>Área Restrita — Acesso exclusivo ao admin</div>
+                <div style={{color:AD.txM,fontSize:11}}>Visualização registrada em auditoria automaticamente.</div>
               </div>
             </div>
             {!showSenhas?(
-              <div style={{textAlign:"center",padding:40}}>
-                <p style={{fontSize:36,marginBottom:12}}>🔐</p>
-                <p style={{color:C.txM,fontSize:13,marginBottom:16}}>Para visualizar as senhas, confirme sua senha de admin.</p>
-                <div style={{maxWidth:320,margin:"0 auto"}}>
-                  <input type="password" value={adminConf} onChange={e=>setAdminConf(e.target.value)} placeholder="Sua senha de admin" style={{...SI,marginBottom:12}}/>
-                  <Btn v="red" full onClick={()=>{
-                    const me=users.find(u=>u.id===usuario.id);
-                    if(adminConf===me.s){setShowSenhas(true);auditAdd(usuario.nome,"VER_SENHAS","Visualizou senhas de todos os usuários");}
-                    else{setSenhaMsg({text:"Senha incorreta.",ok:false});setTimeout(()=>setSenhaMsg({text:"",ok:false}),2500);}
-                  }}>🔓 Confirmar e Ver Senhas</Btn>
-                  {senhaMsg.text&&<p style={{color:C.red,fontSize:12,marginTop:10}}>{senhaMsg.text}</p>}
+              <div style={{textAlign:"center",padding:36}}>
+                <div style={{fontSize:44,marginBottom:10}}>🔐</div>
+                <div style={{color:AD.txM,fontSize:12,marginBottom:14}}>Confirme sua senha de admin.</div>
+                <div style={{maxWidth:300,margin:"0 auto"}}>
+                  <input type="password" value={adminConf} onChange={e=>setAdminConf(e.target.value)} placeholder="Senha de admin"
+                    onKeyDown={e=>{if(e.key!=="Enter")return;const me=users.find(u=>u.id===usuario.id);if(adminConf===me.s){setShowSenhas(true);auditAdd(usuario.nome,"VER_SENHAS","Visualizou senhas");}else{setSenhaMsg({text:"Senha incorreta.",ok:false});setTimeout(()=>setSenhaMsg({text:"",ok:false}),2500);}}}
+                    style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"9px 12px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10}}/>
+                  <button onClick={()=>{const me=users.find(u=>u.id===usuario.id);if(adminConf===me.s){setShowSenhas(true);auditAdd(usuario.nome,"VER_SENHAS","Visualizou senhas");}else{setSenhaMsg({text:"Senha incorreta.",ok:false});setTimeout(()=>setSenhaMsg({text:"",ok:false}),2500);}}} style={{width:"100%",padding:"10px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#c0392b,#e74c3c)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🔓 Confirmar</button>
+                  {senhaMsg.text&&<div style={{color:AD.re,fontSize:11,marginTop:8}}>{senhaMsg.text}</div>}
                 </div>
               </div>
             ):(
               <div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <p style={{color:C.tx,fontWeight:700,fontSize:14,margin:0}}>🔑 Credenciais de Acesso</p>
-                  <Btn v="red" sm onClick={()=>{setShowSenhas(false);setAdminConf("");}}>🙈 Ocultar</Btn>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:700,color:AD.tx}}>🔑 Credenciais</div>
+                  <button onClick={()=>{setShowSenhas(false);setAdminConf("");}} style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${AD.reBd}`,background:"rgba(239,68,68,.1)",color:AD.re,fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🙈 Ocultar</button>
                 </div>
-                <div style={{background:"#fff",border:`1px solid ${C.brd}`,borderRadius:12,overflow:"hidden"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",padding:"8px 16px",background:C.card2,borderBottom:`1px solid ${C.brd}`}}>
-                    {["ID","Usuário","Senha","Perfil"].map(h=><span key={h} style={{color:C.txM,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</span>)}
+                <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,overflow:"hidden"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",padding:"6px 14px",background:"rgba(255,255,255,.04)",borderBottom:`1px solid ${AD.brd}`}}>
+                    {["Usuário","Nome","Senha","Perfil"].map(h=><span key={h} style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase"}}>{h}</span>)}
                   </div>
                   {users.map(u=>(
-                    <div key={u.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",padding:"12px 16px",borderBottom:`1px solid ${C.brd}`,alignItems:"center"}}>
-                      <span style={{color:C.txM,fontSize:12}}>#{u.id}</span>
-                      <span style={{color:C.tx,fontWeight:700,fontSize:13}}>@{u.u}</span>
-                      <span style={{fontFamily:"monospace",background:`${C.red}10`,color:C.red,border:`1px solid ${C.red}25`,padding:"3px 8px",borderRadius:6,fontSize:12,fontWeight:700}}>{u.s}</span>
-                      <Bdg c={u.role==="admin"?C.red:u.role==="medico"?C.p:C.gold}>{u.role}</Bdg>
+                    <div key={u.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",padding:"10px 14px",borderBottom:`1px solid ${AD.brd}`,alignItems:"center"}}>
+                      <span style={{color:AD.p,fontWeight:700,fontSize:12}}>@{u.u}</span>
+                      <span style={{color:AD.tx,fontSize:11}}>{u.nome}</span>
+                      <span style={{fontFamily:"monospace",background:"rgba(239,68,68,.1)",color:AD.re,border:`1px solid ${AD.reBd}`,padding:"2px 7px",borderRadius:5,fontSize:11,fontWeight:700}}>{u.s}</span>
+                      <span style={{background:`${u.role==="admin"?AD.re:u.role==="medico"?AD.p:AD.am}18`,color:u.role==="admin"?AD.re:u.role==="medico"?AD.p:AD.am,padding:"1px 7px",borderRadius:99,fontSize:9,fontWeight:700}}>{u.role}</span>
                     </div>
                   ))}
                 </div>
@@ -8538,66 +8748,66 @@ function PageAdmin({usuario,users,setUsers}){
           </div>
         )}
 
-        {/* ── ABA ATUALIZAÇÕES ── */}
-        {tab==="updates"&&(
-          <AbaAtualizacoes usuario={usuario}/>
-        )}
+        {/* ═══ SISTEMA ═══ */}
+        {tab==="updates"&&<AbaAtualizacoes usuario={usuario}/>}
 
-        {/* ── ABA RESUMO ── */}
-        {tab==="resumo"&&(
-          <div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
-              {[
-                {l:"Logins OK",     v:stats.logins,  c:C.green, icon:"✅"},
-                {l:"Erros/Negados", v:stats.erros,   c:C.red,   icon:"❌"},
-                {l:"Trocas de Senha",v:stats.senhas, c:C.amber, icon:"🔑"},
-                {l:"Reveals Dados", v:stats.reveals, c:C.purple,icon:"👁"},
-              ].map((s,i)=>(
-                <div key={i} style={{background:C.card,border:`1.5px solid ${s.c}25`,borderRadius:14,padding:"16px 18px",borderTop:`3px solid ${s.c}`}}>
-                  <p style={{fontSize:28,margin:"0 0 4px"}}>{s.icon}</p>
-                  <p style={{color:s.c,fontSize:26,fontWeight:900,margin:0}}>{s.v}</p>
-                  <p style={{color:C.txM,fontSize:11,textTransform:"uppercase",margin:"4px 0 0"}}>{s.l}</p>
-                </div>
-              ))}
+        {/* ═══ CONFIG LOGIN — somente Admin ═══ */}
+        {tab==="config"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{background:"rgba(59,157,232,.08)",border:`1px solid ${AD.brdHi}`,borderRadius:10,padding:"12px 16px"}}>
+              <div style={{fontSize:13,fontWeight:800,color:AD.tx,marginBottom:2}}>⚙️ Customizar Tela de Login — Admin</div>
+              <div style={{fontSize:11,color:AD.txM}}>Afeta <strong style={{color:AD.p}}>apenas o login do Admin</strong>. Salvo localmente neste dispositivo.</div>
             </div>
-            <div style={{background:C.card,border:`1px solid ${C.brd}`,borderRadius:14,padding:18,marginBottom:16}}>
-              <p style={{color:C.tx,fontWeight:700,fontSize:14,margin:"0 0 14px"}}>👥 Usuários Ativos</p>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-                {users.map(u=>{
-                  const cor=u.role==="admin"?C.red:u.role==="medico"?C.p:C.gold;
-                  const logsU=logsAll.filter(l=>l.u===u.nome);
-                  return(
-                    <div key={u.id} style={{background:C.card2,borderRadius:10,padding:"12px 14px",border:`1px solid ${C.brd}`,display:"flex",gap:10,alignItems:"center"}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:`${cor}18`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,color:cor,fontSize:14}}>{initials(u.nome)}</div>
-                      <div>
-                        <p style={{color:C.tx,fontWeight:700,fontSize:12,margin:0}}>{u.nome}</p>
-                        <p style={{color:C.txM,fontSize:10,margin:"2px 0 0"}}>@{u.u} · {logsU.length} ações</p>
-                      </div>
-                      <Bdg c={cor} sm>{u.role}</Bdg>
-                    </div>
-                  );
-                })}
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:14}}>
+              <div style={{fontSize:12,fontWeight:700,color:AD.tx,marginBottom:10}}>💬 Textos da tela de login</div>
+              <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Título</label>
+              <input value={loginCfg.titulo||""} onChange={e=>saveLoginCfg({titulo:e.target.value})} placeholder="Ex: Bem-vinda de volta" style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:8}}/>
+              <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Subtítulo</label>
+              <input value={loginCfg.subtitulo||""} onChange={e=>saveLoginCfg({subtitulo:e.target.value})} placeholder="Ex: Acesso ao sistema clínico" style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:14}}>
+              <div style={{fontSize:12,fontWeight:700,color:AD.tx,marginBottom:10}}>📢 Aviso / Comunicado no login</div>
+              <label style={{color:AD.txS,fontSize:9,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Tipo</label>
+              <select value={loginCfg.avisoTipo||"none"} onChange={e=>saveLoginCfg({avisoTipo:e.target.value})} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",marginBottom:8}}>
+                {[["none","Sem aviso"],["info","ℹ️ Informação"],["warn","⚠️ Atenção"],["err","🚨 Urgente"],["ok","✅ Sucesso"]].map(([v,l])=><option key={v} value={v} style={{background:"#1a2d42"}}>{l}</option>)}
+              </select>
+              {loginCfg.avisoTipo&&loginCfg.avisoTipo!=="none"&&(
+                <textarea value={loginCfg.avisoTxt||""} onChange={e=>saveLoginCfg({avisoTxt:e.target.value})} placeholder="Texto do aviso..." rows={3} style={{width:"100%",background:"rgba(255,255,255,.07)",border:`1px solid ${AD.brd}`,borderRadius:7,padding:"8px 10px",color:AD.tx,fontSize:12,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
+              )}
+            </div>
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:14,display:"flex",alignItems:"center",gap:14}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:700,color:AD.tx,marginBottom:2}}>📊 Feed de atividade no login</div>
+                <div style={{fontSize:10,color:AD.txM}}>Exibe últimas ações (sem dados de pacientes) para o admin na tela de login.</div>
+              </div>
+              <div onClick={()=>saveLoginCfg({showFeed:!loginCfg.showFeed})} style={{width:42,height:22,borderRadius:99,background:loginCfg.showFeed?AD.p:"rgba(255,255,255,.15)",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
+                <div style={{position:"absolute",top:2,left:loginCfg.showFeed?20:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.4)"}}/>
               </div>
             </div>
-            <div style={{background:`${C.p}08`,border:`1.5px solid ${C.p}25`,borderRadius:14,padding:18}}>
-              <p style={{color:C.p,fontWeight:700,fontSize:14,margin:"0 0 12px"}}>🔒 Boas Práticas de Segurança</p>
-              {["Troque senhas a cada 90 dias","Nunca compartilhe credenciais","Use senha forte: letras + números + símbolos","Faça logout ao sair do sistema","Monitore logs de acesso semanalmente","Ative autenticação em dois fatores quando disponível"].map((d,i)=>(
-                <div key={i} style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
-                  <span style={{color:C.green,fontSize:14}}>✓</span>
-                  <span style={{color:C.txS,fontSize:13}}>{d}</span>
-                </div>
-              ))}
+            <div style={{background:AD.card,border:`1px solid ${AD.brd}`,borderRadius:10,padding:14}}>
+              <div style={{fontSize:12,fontWeight:700,color:AD.tx,marginBottom:10}}>👁️ Preview da tela de login</div>
+              <div style={{background:"linear-gradient(155deg,#0a1929,#0d2137,#1a3550)",borderRadius:10,padding:"22px 20px",textAlign:"center",border:`1px solid ${AD.brd}`}}>
+                <div style={{fontSize:16,fontWeight:900,color:"#fff",marginBottom:3}}>{loginCfg.titulo||"Bem-vinda de volta"}</div>
+                <div style={{fontSize:11,color:"rgba(168,196,224,.7)",marginBottom:loginCfg.avisoTipo&&loginCfg.avisoTipo!=="none"?10:0}}>{loginCfg.subtitulo||"Acesso ao sistema clínico"}</div>
+                {loginCfg.avisoTipo&&loginCfg.avisoTipo!=="none"&&loginCfg.avisoTxt&&(
+                  <div style={{background:loginCfg.avisoTipo==="err"?"rgba(239,68,68,.15)":loginCfg.avisoTipo==="warn"?"rgba(245,158,11,.15)":loginCfg.avisoTipo==="ok"?"rgba(34,197,94,.15)":"rgba(59,157,232,.15)",border:`1px solid ${loginCfg.avisoTipo==="err"?AD.re:loginCfg.avisoTipo==="warn"?AD.am:loginCfg.avisoTipo==="ok"?AD.gr:AD.p}40`,borderRadius:8,padding:"8px 12px",fontSize:11,color:loginCfg.avisoTipo==="err"?"#fca5a5":loginCfg.avisoTipo==="warn"?"#fcd34d":loginCfg.avisoTipo==="ok"?"#86efac":"#93c5fd",textAlign:"left",marginTop:6}}>
+                    {loginCfg.avisoTipo==="err"?"🚨":loginCfg.avisoTipo==="warn"?"⚠️":loginCfg.avisoTipo==="ok"?"✅":"ℹ️"} {loginCfg.avisoTxt}
+                  </div>
+                )}
+                {loginCfg.showFeed&&<div style={{marginTop:8,background:"rgba(255,255,255,.05)",borderRadius:7,padding:"6px 10px",fontSize:9,color:"rgba(168,196,224,.5)",textAlign:"left"}}>⚡ Feed de atividade visível aqui</div>}
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+                <button onClick={()=>saveLoginCfg({titulo:"",subtitulo:"",avisoTipo:"none",avisoTxt:"",showFeed:false})} style={{padding:"5px 12px",borderRadius:7,border:`1px solid ${AD.brd}`,background:"transparent",color:AD.txM,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>🔄 Restaurar padrão</button>
+              </div>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════
-   POPUP PRIORIDADE HOME — fila de solicitações para Dra.
-════════════════════════════════════════════════════════════════ */
 
 function StepIndicator({ current }) {
   const steps = [
